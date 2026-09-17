@@ -11,4 +11,3 @@ Repositorio frontend. **Comienza vacío de aplicación** porque cada estudiante 
 7. integrar REST directamente contra `citas-api`.
 
 No usar Express/BFF.
-# FCV_Citas-Web
