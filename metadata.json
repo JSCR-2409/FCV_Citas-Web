@@ -1,0 +1,6 @@
+{
+  "name": "Portal de Citas HIC & ICV",
+  "description": "Sistema Integral de Agendamiento Clínico y Gestión Hospitalaria para el Hospital Internacional de Colombia y el Instituto Cardiovascular.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
