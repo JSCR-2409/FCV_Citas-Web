@@ -1,11 +1,13 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { DatePipe } from '@angular/common';
+import { Router } from '@angular/router';
 import { Appointment, ClinicalDataState } from '../services/clinical-data';
+import { AvailabilityItem, CatalogApi } from '../services/catalog-api';
 
 @Component({
   selector: 'app-patient-portal',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [DatePipe],
   template: `
     <div class="flex flex-col lg:flex-row min-h-[calc(100vh-4rem)] w-full">
       
@@ -29,7 +31,7 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
           <!-- Navigation Links -->
           <nav class="flex flex-col gap-1.5" aria-label="Menú de navegación del paciente">
             <button
-              (click)="openBookingModal.set(true)"
+              (click)="startBooking()"
               class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[#0056c3] text-white font-label-md text-[13px] font-semibold hover:bg-[#006ef4] transition-all cursor-pointer text-left"
               type="button"
             >
@@ -60,13 +62,13 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
               <span>Historial &amp; Órdenes</span>
             </button>
 
-            <a
-              routerLink="/login"
+            <button
+              (click)="showFacilities.set(true)"
               class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[#dce1ff] hover:bg-white/10 hover:text-white font-label-md text-[13px] transition-all"
             >
               <span class="material-symbols-outlined text-[20px]">apartment</span>
               <span>Sedes &amp; Médicos</span>
-            </a>
+            </button>
           </nav>
         </div>
 
@@ -123,8 +125,8 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
                 class="w-9 h-9 rounded-full object-cover border-2 border-[#0056c3]"
               />
               <div class="flex flex-col">
-                <span class="font-label-md text-[13px] text-[#001549] font-bold leading-tight">Sofía Restrepo</span>
-                <span class="font-caption text-[11px] text-[#757682]">CC 1.098.342.190</span>
+                <span class="font-label-md text-[13px] text-[#001549] font-bold leading-tight">{{ clinicalState.currentUser()?.name }}</span>
+                <span class="font-caption text-[11px] text-[#757682]">{{ clinicalState.currentUser()?.documentId }}</span>
               </div>
             </div>
           </div>
@@ -143,7 +145,7 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
                   <span class="material-symbols-outlined text-[15px]">badge</span>
                   <span>Paciente Acreditada</span>
                 </div>
-                <h1 class="font-headline-xl text-[26px] sm:text-[30px] font-bold text-white mt-1">¡Hola, Sofía!</h1>
+                <h1 class="font-headline-xl text-[26px] sm:text-[30px] font-bold text-white mt-1">¡Hola, {{ clinicalState.currentUser()?.name?.split(' ')?.[0] }}!</h1>
                 <p class="font-subtitle text-[14px] text-[#dee8ff]">
                   Bienvenida a su panel clínico unificado del Hospital Internacional de Colombia y el Instituto Cardiovascular.
                 </p>
@@ -183,7 +185,7 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
               </div>
 
               <button
-                (click)="openBookingModal.set(true)"
+                (click)="startBooking()"
                 class="w-full py-2.5 rounded-xl bg-[#0056c3] text-white font-label-md text-[13px] font-semibold hover:bg-[#006ef4] transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
                 type="button"
               >
@@ -327,12 +329,15 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
                 (change)="bookSpecialty.set($any($event.target).value)"
                 required
               >
-                <option value="Cardiología Clínica">Cardiología Clínica</option>
-                <option value="Electrocardiografía Diagnóstica">Electrocardiografía Diagnóstica</option>
-                <option value="Cirugía Cardiovascular">Cirugía Cardiovascular</option>
-                <option value="Neurología Clínica">Neurología Clínica</option>
-                <option value="Medicina Interna">Medicina Interna</option>
+                <option value="Medicina General">Medicina General</option>
+                <option value="Medicina General">Medicina General</option>
+                <option value="Nefrología">Nefrología</option>
+                <option value="Urología">Urología</option>
+                <option value="Gastroenterología">Gastroenterología</option>
+                <option value="Neumología Adulto">Neumología Adulto</option>
                 <option value="Ortopedia y Traumatología">Ortopedia y Traumatología</option>
+                <option value="Endocrinología">Endocrinología</option>
+                <option value="Neurología">Neurología</option>
               </select>
             </div>
 
@@ -385,7 +390,7 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
                   id="book-date"
                   type="date"
                   class="w-full h-11 px-3 bg-[#f0f3ff] text-[#111c2c] rounded-lg border border-[#c5c6d3]/60 text-[13px] outline-none"
-                  [value]="bookDate()"
+                  [value]="bookDate()" [min]="today()"
                   (input)="bookDate.set($any($event.target).value)"
                   required
                 />
@@ -407,6 +412,16 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
                 </select>
               </div>
             </div>
+            <button type="button" (click)="searchAvailability()" class="h-10 rounded-lg border border-[#0056c3] text-[#0056c3] text-[13px] font-semibold">Consultar horarios reales</button>
+            @if (availability().length > 0) {
+              <div class="flex flex-col gap-1.5">
+                <label for="book-slot" class="font-label-md text-[13px] text-[#001549] font-semibold">Horario disponible</label>
+                <select id="book-slot" class="w-full h-11 px-3.5 bg-[#f0f3ff] text-[#111c2c] rounded-lg border border-[#c5c6d3]/60 text-[13px]" [value]="selectedSlot()?.slotId" (change)="selectSlot($any($event.target).value)">
+                  @for (slot of availability(); track slot.slotId) { <option [value]="slot.slotId">{{ slot.startAt | date:'shortTime' }} — {{ slot.professionalCode }} — {{ slot.locationName }}</option> }
+                </select>
+              </div>
+            }
+            @if (bookingMessage()) { <p class="text-[12px] text-[#0056c3]">{{ bookingMessage() }}</p> }
 
             <!-- Insurance check -->
             <div class="p-3 bg-[#dee8ff]/50 rounded-xl flex items-center justify-between border border-[#dee8ff]">
@@ -515,6 +530,14 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
     }
 
     <!-- MODAL 3: Gestionar Perfil -->
+    @if (showFacilities()) {
+      <div class="fixed inset-0 z-50 bg-[#001549]/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6">
+          <div class="flex items-center justify-between border-b border-[#e7eeff] pb-3"><h3 class="text-[#001549] font-bold">Sedes y profesionales</h3><button type="button" (click)="showFacilities.set(false)" class="text-[#757682]">✕</button></div>
+          <div class="grid gap-3 mt-4"><div class="p-3 rounded-xl bg-[#f0f3ff]"><b>HIC</b><p class="text-[12px] text-[#444651]">Hospital Internacional de Colombia</p></div><div class="p-3 rounded-xl bg-[#f0f3ff]"><b>ICV</b><p class="text-[12px] text-[#444651]">Instituto Cardiovascular</p></div><p class="text-[12px] text-[#757682]">Los profesionales disponibles se muestran al consultar horarios reales en Agendar Citas.</p></div>
+        </div>
+      </div>
+    }
     @if (showProfileModal()) {
       <div class="fixed inset-0 z-50 bg-[#001549]/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
         <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-[#e7eeff] overflow-hidden flex flex-col">
@@ -536,19 +559,19 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
                 class="w-12 h-12 rounded-full object-cover border border-[#0056c3]"
               />
               <div>
-                <h4 class="font-label-md text-[15px] font-bold text-[#001549]">Sofía Mariana Restrepo</h4>
-                <span class="font-caption text-[12px] text-[#757682]">CC 1.098.342.190 • Grupo Sanguíneo: O+</span>
+                <h4 class="font-label-md text-[15px] font-bold text-[#001549]">{{ clinicalState.currentUser()?.name }}</h4>
+                <span class="font-caption text-[12px] text-[#757682]">{{ clinicalState.currentUser()?.documentId }}</span>
               </div>
             </div>
 
             <div class="flex flex-col gap-2 text-[13px]">
               <div class="flex justify-between py-1 border-b border-[#f0f3ff]">
                 <span class="text-[#757682]">Correo Registrado:</span>
-                <span class="font-medium text-[#111c2c]">paciente@hic.org.co</span>
+                <span class="font-medium text-[#111c2c]">{{ clinicalState.currentUser()?.email }}</span>
               </div>
               <div class="flex justify-between py-1 border-b border-[#f0f3ff]">
                 <span class="text-[#757682]">Teléfono:</span>
-                <span class="font-medium text-[#111c2c]">+57 (318) 459-2918</span>
+                <span class="font-medium text-[#111c2c]">{{ clinicalState.currentUser()?.phone }}</span>
               </div>
               <div class="flex justify-between py-1 border-b border-[#f0f3ff]">
                 <span class="text-[#757682]">Convenio Aseguradora:</span>
@@ -626,21 +649,29 @@ import { Appointment, ClinicalDataState } from '../services/clinical-data';
 export class PatientPortal {
   clinicalState = inject(ClinicalDataState);
   router = inject(Router);
+  catalogApi = inject(CatalogApi);
 
   openBookingModal = signal(false);
   showDetailModal = signal(false);
   showProfileModal = signal(false);
   showExpiredModal = signal(false);
   showLogoutConfirm = signal(false);
+  showFacilities = signal(false);
 
   selectedAppointment = signal<Appointment | null>(null);
 
   // Booking fields
-  bookSpecialty = signal('Cardiología Clínica');
+  bookSpecialty = signal('Medicina General');
   bookFacility = signal<'HIC' | 'ICV'>('HIC');
   bookDoctor = signal('Dr. Carlos E. Santos');
-  bookDate = signal('2024-11-20');
+  bookDate = signal(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
   bookTime = signal('09:30 AM');
+  availability = signal<AvailabilityItem[]>([]);
+  selectedSlot = signal<AvailabilityItem | null>(null);
+  bookingMessage = signal('');
+
+  today() { return new Date().toISOString().slice(0, 10); }
+  startBooking() { const date = new Date(); date.setDate(date.getDate() + 1); this.bookDate.set(date.toISOString().slice(0, 10)); this.openBookingModal.set(true); this.searchAvailability(); }
 
   primaryAppointment() {
     const apps = this.clinicalState.appointments();
@@ -662,6 +693,18 @@ export class PatientPortal {
 
   handleBookAppointment(e: Event) {
     e.preventDefault();
+    const slot = this.selectedSlot();
+    if (!slot) { this.bookingMessage.set('Consulta y selecciona un horario disponible.'); return; }
+    const specialtyId = this.specialtyId();
+    const request = specialtyId === 1
+      ? this.catalogApi.createGeneralAppointment(slot.slotId, specialtyId)
+      : this.catalogApi.requestSpecializedAppointment(slot.slotId, specialtyId);
+    request.subscribe({
+      next: () => { this.bookingMessage.set('Cita creada correctamente.'); this.refreshAppointments(); this.openBookingModal.set(false); },
+      error: err => this.bookingMessage.set(err.status === 409 ? 'El horario acaba de ser ocupado.' : 'No fue posible crear la cita.')
+    });
+    return;
+    /* legacy visual fallback kept below for offline mock preview */
     const facName = this.bookFacility() === 'HIC' ? 'Hospital Internacional de Colombia' : 'Instituto Cardiovascular ICV';
     this.clinicalState.addAppointment({
       doctorName: this.bookDoctor(),
@@ -678,8 +721,22 @@ export class PatientPortal {
     this.openBookingModal.set(false);
   }
 
-  cancelActiveAppointment(id: string) {
-    this.clinicalState.cancelAppointment(id);
-    this.showDetailModal.set(false);
+  searchAvailability() {
+    const date = this.bookDate();
+    this.bookingMessage.set('Consultando horarios…');
+    this.catalogApi.availability({ date, specialtyId: this.specialtyId() }).subscribe({
+      next: result => { this.availability.set(result.items); this.selectedSlot.set(result.items[0] ?? null); this.bookingMessage.set(result.items.length ? 'Selecciona un horario.' : 'No hay horarios disponibles para esa fecha.'); },
+      error: () => { this.availability.set([]); this.bookingMessage.set('No fue posible consultar disponibilidad.'); }
+    });
   }
+
+  specialtyId() { const ids: Record<string, number> = { 'Medicina General': 1, 'Nefrología': 6, 'Urología': 7, 'Gastroenterología': 8, 'Neumología Adulto': 9, 'Ortopedia y Traumatología': 11, 'Endocrinología': 10, 'Neurología': 12 }; return ids[this.bookSpecialty()] ?? 1; }
+
+  selectSlot(id: string) { this.selectedSlot.set(this.availability().find(slot => String(slot.slotId) === id) ?? null); }
+
+  cancelActiveAppointment(id: string) {
+    this.catalogApi.cancelAppointment(Number(id)).subscribe({ next: () => { this.refreshAppointments(); this.showDetailModal.set(false); }, error: () => this.bookingMessage.set('No fue posible cancelar la cita.') });
+  }
+
+  refreshAppointments() { this.catalogApi.myAppointments().subscribe({ next: items => { const current = this.clinicalState.currentUser(); if (current) this.clinicalState.hydrateFromApi({ ...current, role: current.role === 'paciente' ? 'USER' : current.role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, items); } }); }
 }

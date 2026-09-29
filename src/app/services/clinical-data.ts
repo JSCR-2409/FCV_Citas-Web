@@ -37,36 +37,15 @@ export class ClinicalDataState {
   private router = inject(Router);
   currentUser = signal<UserProfile | null>(null);
 
-  appointments = signal<Appointment[]>([
-    {
-      id: 'CIT-2024-8841',
-      doctorName: 'Dr. Carlos E. Santos',
-      specialty: 'Cardiología Clínica',
-      facility: 'HIC',
-      facilityFullName: 'HIC Floridablanca / Piedecuesta',
-      date: 'Jueves, 24 Oct 2024',
-      time: '08:30 AM',
-      type: 'Presencial',
-      status: 'Confirmada',
-      preparationNote: 'Presentarse con 20 minutos de anticipación. Requiere 8 horas de ayuno para perfil lipídico y presentar documento de identidad original.',
-      room: 'Consultorio 402 • Piso 4',
-    },
-    {
-      id: 'CIT-2024-9120',
-      doctorName: 'Dra. Sandra Milena Pérez',
-      specialty: 'Electrocardiografía Diagnóstica',
-      facility: 'ICV',
-      facilityFullName: 'Instituto Cardiovascular - Floridablanca',
-      date: 'Martes, 12 Nov 2024',
-      time: '11:15 AM',
-      type: 'Presencial',
-      status: 'Confirmada',
-      preparationNote: 'No aplicar cremas corporales en el pecho el día del examen. Traer ropa cómoda de dos piezas.',
-      room: 'Unidad de Diagnóstico No Invasivo • Piso 2',
-    },
-  ]);
+  appointments = signal<Appointment[]>([]);
 
   constructor() {}
+
+  hydrateFromApi(profile: any, remoteAppointments: any[]) {
+    const role: UserRole = profile.role === 'ADMIN' ? 'admin' : profile.role === 'PROFESSIONAL' ? 'medico' : 'paciente';
+    this.currentUser.set({ name: `${profile.names} ${profile.surnames}`, role, email: profile.email, documentId: `${profile.documentType} ${profile.documentNumber}`, avatarUrl: '', phone: profile.phone });
+    this.appointments.set(remoteAppointments.map(item => ({ id: String(item.id), doctorName: item.doctorName, specialty: item.specialty, facility: item.facility === 'ICV' ? 'ICV' : 'HIC', facilityFullName: item.facilityFullName, date: new Date(item.startAt).toLocaleDateString('es-CO'), time: new Date(item.startAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }), type: 'Presencial', status: item.status === 'APPROVED' ? 'Confirmada' : item.status === 'REQUESTED' ? 'En Espera' : item.status === 'COMPLETED' ? 'Atendida' : 'Cancelada' } as Appointment)));
+  }
 
 
   loginAs(role: UserRole) {
@@ -123,6 +102,7 @@ export class ClinicalDataState {
     this.currentUser.set(null);
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
       localStorage.removeItem('hic_active_user');
+      localStorage.removeItem('fcv_access_token');
     }
     this.router.navigate(['/login']);
   }

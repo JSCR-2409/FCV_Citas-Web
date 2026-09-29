@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ClinicalDataState } from '../services/clinical-data';
+import { CatalogApi } from '../services/catalog-api';
 
 export interface AdminModule {
   id: string;
@@ -276,6 +277,8 @@ export interface AdminModule {
 })
 export class AdminPortal implements OnInit, OnDestroy {
   clinicalState = inject(ClinicalDataState);
+  private catalogApi = inject(CatalogApi);
+  specializedRequests = signal<any[]>([]);
 
   remainingSeconds = signal(14 * 60 + 59);
   private timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -362,6 +365,7 @@ export class AdminPortal implements OnInit, OnDestroy {
   ];
 
   ngOnInit() {
+    this.catalogApi.specializedRequests().subscribe({ next: requests => { this.specializedRequests.set(requests); const module = this.modules.find(item => item.id === 'solicitudes'); if (module) { module.badge = `${requests.length} Pendientes`; module.details = requests.map(item => `Solicitud #${item.id} • Especialidad ${item.specialtyId} • ${item.startAt}`); } }, error: () => this.specializedRequests.set([]) });
     this.timerInterval = setInterval(() => {
       this.remainingSeconds.update((s) => (s > 0 ? s - 1 : 0));
     }, 1000);

@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Router, RouterLink } from '@angular/router';
 import { ClinicalDataState, UserRole } from '../services/clinical-data';
 import { API_BASE_URL } from '../services/api-base-url';
+import { CatalogApi } from '../services/catalog-api';
 
 export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
 
@@ -114,7 +115,7 @@ export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
         <div class="w-full max-w-[460px] flex flex-col gap-4">
           
           <!-- Interactive UX State Switcher Banner -->
-          <div class="w-full bg-white rounded-xl p-2.5 shadow-sm border border-[#e7eeff]">
+          <!--
             <div class="flex items-center justify-between px-1 mb-2">
               <span class="font-micro text-[11px] text-[#757682] uppercase tracking-wider flex items-center gap-1 font-semibold">
                 <span class="material-symbols-outlined text-[14px]">tune</span> Estados de Prueba UX
@@ -157,7 +158,7 @@ export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
                 Expirada
               </button>
             </div>
-          </div>
+          </div>-->
 
           <!-- Header Section -->
           <div class="flex flex-col gap-1">
@@ -360,9 +361,10 @@ export class Login {
   router = inject(Router);
   private http = inject(HttpClient);
   private apiBaseUrl = inject(API_BASE_URL);
+  private catalogApi = inject(CatalogApi);
 
-  emailValue = signal('paciente@hic.org.co');
-  passwordValue = signal('HospitalSeguro2024!');
+  emailValue = signal('');
+  passwordValue = signal('');
   showPassword = signal(false);
   uxState = signal<UXState>('normal');
   selectedRole = signal<UserRole>('paciente');
@@ -402,9 +404,13 @@ export class Login {
       email: this.emailValue(), password: this.passwordValue(),
     }).subscribe({
       next: ({ accessToken }) => {
+        if (typeof localStorage !== 'undefined') localStorage.setItem('fcv_access_token', accessToken);
         const role = this.roleFromAccessToken(accessToken);
         if (!role) { this.uxState.set('invalid'); return; }
-        this.clinicalState.loginAs(role);
+        this.catalogApi.me().subscribe({
+          next: profile => this.catalogApi.myAppointments().subscribe({ next: appointments => { this.clinicalState.hydrateFromApi({ ...profile, role: role === 'paciente' ? 'USER' : role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, appointments); this.router.navigate([role === 'paciente' ? '/portal/paciente' : role === 'medico' ? '/portal/medico' : '/portal/admin']); }, error: () => this.clinicalState.hydrateFromApi({ ...profile, role: role === 'paciente' ? 'USER' : role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, []) }),
+          error: () => this.uxState.set('invalid')
+        });
       },
       error: () => this.uxState.set('invalid'),
     });

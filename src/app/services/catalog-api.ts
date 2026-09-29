@@ -50,4 +50,9 @@ export class CatalogApi {
   }
   createGeneralAppointment(slotId: number, specialtyId: number): Observable<unknown> { return this.http.post(`${this.baseUrl}/appointments/general`, { slotId, specialtyId }); }
   requestSpecializedAppointment(slotId: number, specialtyId: number): Observable<unknown> { return this.http.post(`${this.baseUrl}/appointments/specialized`, { slotId, specialtyId }); }
+  me(): Observable<{id:number; names:string; surnames:string; documentType:string; documentNumber:string; email:string; phone:string}> { return this.http.get<any>(`${this.baseUrl}/me`); }
+  myAppointments(): Observable<any[]> { return this.http.get<any[]>(`${this.baseUrl}/me/appointments`); }
+  specializedRequests(): Observable<any[]> { return this.http.get<any[]>(`${this.baseUrl}/admin/specialized-requests`); }
+  decideSpecializedRequest(id: number, status: 'APPROVED'|'REJECTED', reason?: string): Observable<any> { return this.http.patch(`${this.baseUrl}/admin/specialized-requests/${id}`, { status, reason }); }
+  cancelAppointment(id: number): Observable<void> { return this.http.patch<void>(`${this.baseUrl}/me/appointments/${id}/cancel`, {}); }
 }

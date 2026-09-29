@@ -1,5 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { API_BASE_URL } from '../services/api-base-url';
 
 @Component({
   selector: 'app-recovery',
@@ -139,6 +142,7 @@ import { RouterLink } from '@angular/router';
                     Ingrese la dirección de correo electrónico vinculada a su historia clínica o usuario hospitalario.
                   </p>
                 </div>
+                @if (recoveryError()) { <div class="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-[12px]">{{ recoveryError() }}</div> }
 
                 @if (!linkSent()) {
                   <form class="flex flex-col gap-4" (submit)="handleSendLink($event)">
@@ -160,7 +164,7 @@ import { RouterLink } from '@angular/router';
                         />
                       </div>
                       <span class="font-caption text-[11px] text-[#444651] pl-1">
-                        Le enviaremos un código temporal y un enlace de restablecimiento seguro.
+                        Verificaremos que la cuenta exista. Si el correo no está disponible, podrá continuar directamente al cambio de clave.
                       </span>
                     </div>
 
@@ -181,7 +185,7 @@ import { RouterLink } from '@angular/router';
                           <span class="animate-spin material-symbols-outlined text-[18px]">progress_activity</span>
                           <span>Generando enlace seguro...</span>
                         } @else {
-                          <span>Enviar Instrucciones por Correo</span>
+                        <span>Verificar cuenta y continuar</span>
                           <span class="material-symbols-outlined text-[18px]">send</span>
                         }
                       </button>
@@ -196,9 +200,9 @@ import { RouterLink } from '@angular/router';
                     <div class="w-12 h-12 rounded-full bg-[#0056c3] text-white flex items-center justify-center shadow-md">
                       <span class="material-symbols-outlined text-[26px]">mark_email_read</span>
                     </div>
-                    <h3 class="font-label-md text-[16px] text-[#001549] font-bold">¡Enlace de Recuperación Enviado!</h3>
+                    <h3 class="font-label-md text-[16px] text-[#001549] font-bold">¡Cuenta verificada!</h3>
                     <p class="font-body-md text-[13px] text-[#444651] max-w-md">
-                      Hemos enviado un enlace seguro al correo <strong class="text-[#001549]">{{ recoveryEmail() }}</strong>. El enlace permanecerá activo por 15 minutos.
+                      Verificamos la cuenta <strong class="text-[#001549]">{{ recoveryEmail() }}</strong>. Como el correo es opcional, puede continuar directamente al cambio de contraseña.
                     </p>
                     <div class="pt-2 flex flex-col sm:flex-row items-center gap-3">
                       <button
@@ -206,7 +210,7 @@ import { RouterLink } from '@angular/router';
                         class="px-5 py-2.5 rounded-xl bg-[#0056c3] text-white font-label-md text-[13px] font-semibold hover:bg-[#006ef4] transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                         type="button"
                       >
-                        <span>Simular: Abrir Enlace (Paso 2)</span>
+                        <span>Continuar al cambio de clave</span>
                         <span class="material-symbols-outlined text-[16px]">open_in_new</span>
                       </button>
                       <button
@@ -214,7 +218,7 @@ import { RouterLink } from '@angular/router';
                         class="px-4 py-2 rounded-xl text-[#0056c3] hover:bg-white text-[12px] font-medium transition-colors cursor-pointer"
                         type="button"
                       >
-                        Enviar a otro correo
+                        Usar otro correo
                       </button>
                     </div>
                   </div>
@@ -230,6 +234,7 @@ import { RouterLink } from '@angular/router';
                   <p class="font-body-md text-[13px] text-[#444651]">
                     Establezca una nueva clave institucional para proteger su expediente y citas médicas.
                   </p>
+                  @if (recoveryError()) { <div class="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-[12px]">{{ recoveryError() }}</div> }
                 </div>
 
                 @if (!passwordChanged()) {
@@ -442,19 +447,22 @@ import { RouterLink } from '@angular/router';
   `,
 })
 export class Recovery {
+  private http = inject(HttpClient);
+  private apiBaseUrl = inject(API_BASE_URL);
   activeStep = signal<1 | 2>(1);
 
   // Step 1
-  recoveryEmail = signal('paciente@correo.com');
+  recoveryEmail = signal('');
   sendingLink = signal(false);
   linkSent = signal(false);
 
   // Step 2
-  newPassword = signal('SeguraHIC2024*');
-  confirmPassword = signal('SeguraHIC2024*');
+  newPassword = signal('');
+  confirmPassword = signal('');
   showNewPwd = signal(false);
   showConfirmPwd = signal(false);
   passwordChanged = signal(false);
+  recoveryError = signal('');
 
   hasMinLength = computed(() => this.newPassword().length >= 8);
   hasCase = computed(() => /[A-Z]/.test(this.newPassword()) && /[a-z]/.test(this.newPassword()));
@@ -493,15 +501,16 @@ export class Recovery {
   handleSendLink(e: Event) {
     e.preventDefault();
     this.sendingLink.set(true);
-    setTimeout(() => {
-      this.sendingLink.set(false);
-      this.linkSent.set(true);
-    }, 500);
+    this.recoveryError.set('');
+    this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/recovery/request`, { email: this.recoveryEmail() }).subscribe({
+      next: () => { this.sendingLink.set(false); this.linkSent.set(true); },
+      error: err => { this.sendingLink.set(false); this.recoveryError.set(err.status === 404 ? 'No encontramos una cuenta activa con ese correo.' : 'No fue posible verificar la cuenta. Puede intentar nuevamente.'); }
+    });
   }
 
   handlePasswordReset(e: Event) {
     e.preventDefault();
     if (!this.passwordsMatch() || !this.hasMinLength()) return;
-    this.passwordChanged.set(true);
+    this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/password-reset`, { email: this.recoveryEmail(), password: this.newPassword() }).subscribe({ next: () => this.passwordChanged.set(true), error: err => this.recoveryError.set(err.status === 404 ? 'La cuenta no existe o está inactiva.' : 'No fue posible actualizar la contraseña.') });
   }
 }

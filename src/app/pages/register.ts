@@ -4,7 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ClinicalDataState } from '../services/clinical-data';
 import { API_BASE_URL } from '../services/api-base-url';
 
-export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success';
+export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success' | 'loading' | 'error';
 
 @Component({
   selector: 'app-register',
@@ -12,50 +12,6 @@ export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success';
   imports: [RouterLink],
   template: `
     <div class="flex flex-col w-full min-h-[calc(100vh-4rem)]">
-      <!-- Interactive State Controller Bar -->
-      <aside aria-label="Simulador de estados del formulario" class="w-full bg-[#f0f3ff] py-2.5 px-4 sm:px-6 lg:px-8 shadow-sm border-b border-[#e7eeff]">
-        <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-[#0056c3] text-[20px]">tune</span>
-            <span class="font-caption text-[11px] uppercase tracking-wider text-[#757682] font-semibold">Simulador de Estados Clínicos:</span>
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5" role="toolbar">
-            <button
-              [class]="state() === 'default' ? 'bg-[#001549] text-white' : 'bg-[#dee8ff] text-[#444651] hover:bg-[#cfdaf1]'"
-              class="px-3 py-1 rounded-full font-caption text-[12px] font-medium transition-all cursor-pointer"
-              (click)="applyState('default')"
-              type="button"
-            >
-              Formulario Inicial
-            </button>
-            <button
-              [class]="state() === 'duplicate' ? 'bg-[#001549] text-white' : 'bg-[#dee8ff] text-[#444651] hover:bg-[#cfdaf1]'"
-              class="px-3 py-1 rounded-full font-caption text-[12px] font-medium transition-all cursor-pointer"
-              (click)="applyState('duplicate')"
-              type="button"
-            >
-              Error: Datos Duplicados
-            </button>
-            <button
-              [class]="state() === 'pwd' ? 'bg-[#001549] text-white' : 'bg-[#dee8ff] text-[#444651] hover:bg-[#cfdaf1]'"
-              class="px-3 py-1 rounded-full font-caption text-[12px] font-medium transition-all cursor-pointer"
-              (click)="applyState('pwd')"
-              type="button"
-            >
-              Error: Contraseñas
-            </button>
-            <button
-              [class]="state() === 'success' ? 'bg-[#001549] text-white' : 'bg-[#dee8ff] text-[#444651] hover:bg-[#cfdaf1]'"
-              class="px-3 py-1 rounded-full font-caption text-[12px] font-medium transition-all cursor-pointer"
-              (click)="applyState('success')"
-              type="button"
-            >
-              Éxito: Cuenta Creada
-            </button>
-          </div>
-        </div>
-      </aside>
-
       <!-- Notice Banner: Patient Exclusive -->
       <section class="w-full bg-[#dee8ff] py-2 px-4 sm:px-6 lg:px-8 border-b border-[#cfdaf1]">
         <div class="max-w-7xl mx-auto flex items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left">
@@ -361,6 +317,9 @@ export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success';
                       <span class="font-caption text-[12px] font-semibold">Las contraseñas ingresadas no coinciden. Por favor verifique nuevamente.</span>
                     </div>
                   }
+                  @if (state() === 'error') {
+                    <div class="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] flex items-center gap-2"><span class="material-symbols-outlined">error</span><span class="font-caption text-[12px] font-semibold">No fue posible completar el registro. Verifique los datos e intente nuevamente.</span></div>
+                  }
 
                   <!-- Security Tip Box -->
                   <div class="p-3 rounded-xl bg-[#f0f3ff] flex items-start gap-2 border border-[#e7eeff]">
@@ -388,9 +347,9 @@ export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success';
                   <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
                     <button
                       class="w-full sm:w-auto px-7 py-3 rounded-xl bg-[#0056c3] text-white font-label-md text-[14px] font-semibold hover:bg-[#006ef4] transition-all shadow-[0_4px_14px_rgba(0,86,195,0.3)] flex items-center justify-center gap-2 cursor-pointer"
-                      type="submit"
+                      type="submit" [disabled]="state() === 'loading'"
                     >
-                      <span>Crear Cuenta de Paciente</span>
+                      <span>{{ state() === 'loading' ? 'Registrando…' : 'Crear Cuenta de Paciente' }}</span>
                       <span class="material-symbols-outlined text-[18px]">check_circle</span>
                     </button>
                     <a
@@ -508,30 +467,20 @@ export class Register {
 
   state = signal<RegisterState>('default');
 
-  firstName = signal('Sofía Mariana');
-  lastName = signal('Restrepo Mendoza');
+  firstName = signal('');
+  lastName = signal('');
   docType = signal('CC');
-  docNumber = signal('1098765432');
-  email = signal('paciente@correo.com');
-  phone = signal('3184592918');
-  pwd1 = signal('Hospital2024*');
-  pwd2 = signal('Hospital2024*');
+  docNumber = signal('');
+  email = signal('');
+  phone = signal('');
+  pwd1 = signal('');
+  pwd2 = signal('');
 
   showPwd1 = signal(false);
   showPwd2 = signal(false);
 
   applyState(st: RegisterState) {
     this.state.set(st);
-    if (st === 'duplicate') {
-      this.email.set('paciente@hic.org.co');
-      this.docNumber.set('1098342190');
-    } else if (st === 'pwd') {
-      this.pwd1.set('HospitalSeguro1');
-      this.pwd2.set('ClaveDiferente2');
-    } else if (st === 'default') {
-      this.pwd1.set('Hospital2024*');
-      this.pwd2.set('Hospital2024*');
-    }
   }
 
   handleRegisterSubmit(e: Event) {
@@ -540,6 +489,7 @@ export class Register {
       this.state.set('pwd');
       return;
     }
+    this.state.set('loading');
     this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/register`, {
       names: this.firstName(),
       surnames: this.lastName(),
@@ -550,7 +500,7 @@ export class Register {
       password: this.pwd1(),
     }).subscribe({
       next: () => this.state.set('success'),
-      error: (error) => this.state.set(error.status === 409 ? 'duplicate' : 'default'),
+      error: (error) => this.state.set(error.status === 409 || error.status === 403 ? 'duplicate' : 'error'),
     });
   }
 

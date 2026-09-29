@@ -34,29 +34,8 @@ import { ClinicalDataState } from '../services/clinical-data';
           </div>
         </div>
 
-        <!-- Center: Screen Selector Toolbar for easy preview testing -->
-        <div class="hidden xl:flex items-center bg-[#f0f3ff] p-1 rounded-lg gap-0.5 border border-[#c5c6d3]/40">
-          <a
-            routerLink="/login"
-            routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
-            class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
-          >
-            Inicio Sesión
-          </a>
-          <a
-            routerLink="/registro"
-            routerLinkActive="bg-[#ffffff] text-[#001549] shadow-scale font-semibold"
-            class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
-          >
-            Registro
-          </a>
-          <a
-            routerLink="/recuperar"
-            routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
-            class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
-          >
-            Recuperar Clave
-          </a>
+        <!-- Center: navegación contextual, sin exponer autenticación dentro del portal -->
+        @if (clinicalState.currentUser()) { <div class="hidden xl:flex items-center bg-[#f0f3ff] p-1 rounded-lg gap-0.5 border border-[#c5c6d3]/40">
           <a
             routerLink="/portal/paciente"
             routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
@@ -78,7 +57,7 @@ import { ClinicalDataState } from '../services/clinical-data';
           >
             Consola Admin
           </a>
-        </div>
+        </div> }
 
         <!-- Right: Actions -->
         <div class="flex items-center gap-2 sm:gap-3">

@@ -117,8 +117,8 @@ interface PatientRecord {
                 class="w-9 h-9 rounded-full object-cover border-2 border-[#0056c3]"
               />
               <div class="flex flex-col">
-                <span class="font-label-md text-[13px] text-[#001549] font-bold leading-tight">Dr. Alejandro Morales</span>
-                <span class="font-caption text-[11px] text-[#757682]">Cardiología Clínica • Consultorio 402</span>
+                <span class="font-label-md text-[13px] text-[#001549] font-bold leading-tight">{{ clinicalState.currentUser()?.name }}</span>
+                <span class="font-caption text-[11px] text-[#757682]">{{ clinicalState.currentUser()?.email }}</span>
               </div>
             </div>
           </div>
@@ -138,7 +138,7 @@ interface PatientRecord {
                   <span>Turno Mañana: Activo (07:00 - 13:00)</span>
                 </div>
                 <h1 class="font-headline-xl text-[24px] sm:text-[28px] font-bold text-white mt-1">
-                  Panel Médico • Dr. Alejandro Morales
+                  Panel Médico • {{ clinicalState.currentUser()?.name }}
                 </h1>
                 <p class="font-subtitle text-[14px] text-[#dee8ff]">
                   Especialista en Cardiología Clínica y Diagnóstico Cardiovascular No Invasivo.
