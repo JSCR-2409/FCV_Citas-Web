@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Router, RouterLink } from '@angular/router';
 import { ClinicalDataState } from '../services/clinical-data';
+import { API_BASE_URL } from '../services/api-base-url';
 
 export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success';
 
@@ -501,6 +503,8 @@ export type RegisterState = 'default' | 'duplicate' | 'pwd' | 'success';
 export class Register {
   clinicalState = inject(ClinicalDataState);
   router = inject(Router);
+  private http = inject(HttpClient);
+  private apiBaseUrl = inject(API_BASE_URL);
 
   state = signal<RegisterState>('default');
 
@@ -536,7 +540,18 @@ export class Register {
       this.state.set('pwd');
       return;
     }
-    this.state.set('success');
+    this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/register`, {
+      names: this.firstName(),
+      surnames: this.lastName(),
+      documentType: this.docType(),
+      documentNumber: this.docNumber(),
+      email: this.email(),
+      phone: this.phone(),
+      password: this.pwd1(),
+    }).subscribe({
+      next: () => this.state.set('success'),
+      error: (error) => this.state.set(error.status === 409 ? 'duplicate' : 'default'),
+    });
   }
 
   proceedToLogin() {

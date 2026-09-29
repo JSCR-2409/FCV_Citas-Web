@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Router, RouterLink } from '@angular/router';
 import { ClinicalDataState, UserRole } from '../services/clinical-data';
+import { API_BASE_URL } from '../services/api-base-url';
 
 export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
 
@@ -280,8 +282,8 @@ export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
             </button>
           </form>
 
-          <!-- Role Quick Switcher Demo Buttons -->
-          <div class="flex flex-col gap-1.5 pt-1">
+          <!-- Role quick access is intentionally unavailable: roles come from the API token. -->
+          <!--div class="flex flex-col gap-1.5 pt-1">
             <span class="font-micro text-[11px] text-[#757682] uppercase tracking-wider text-center font-semibold">
               Acceso Rápido de Prueba por Rol
             </span>
@@ -311,7 +313,7 @@ export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
                 <span>Administrador</span>
               </button>
             </div>
-          </div>
+          </div-->
 
           <!-- Secondary Clinical Registration Prompt -->
           <div class="mt-1 p-3.5 rounded-xl bg-[#f0f3ff] flex flex-col items-center text-center gap-1 shadow-sm border border-[#e7eeff]">
@@ -356,6 +358,8 @@ export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
 export class Login {
   clinicalState = inject(ClinicalDataState);
   router = inject(Router);
+  private http = inject(HttpClient);
+  private apiBaseUrl = inject(API_BASE_URL);
 
   emailValue = signal('paciente@hic.org.co');
   passwordValue = signal('HospitalSeguro2024!');
@@ -394,8 +398,22 @@ export class Login {
   handleLoginSubmit(event: Event) {
     event.preventDefault();
     this.uxState.set('loading');
-    setTimeout(() => {
-      this.clinicalState.loginAs(this.selectedRole());
-    }, 600);
+    this.http.post<{accessToken: string}>(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/login`, {
+      email: this.emailValue(), password: this.passwordValue(),
+    }).subscribe({
+      next: ({ accessToken }) => {
+        const role = this.roleFromAccessToken(accessToken);
+        if (!role) { this.uxState.set('invalid'); return; }
+        this.clinicalState.loginAs(role);
+      },
+      error: () => this.uxState.set('invalid'),
+    });
+  }
+
+  private roleFromAccessToken(token: string): UserRole | null {
+    try {
+      const claim = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role;
+      return claim === 'USER' ? 'paciente' : claim === 'PROFESSIONAL' ? 'medico' : claim === 'ADMIN' ? 'admin' : null;
+    } catch { return null; }
   }
 }

@@ -66,18 +66,7 @@ export class ClinicalDataState {
     },
   ]);
 
-  constructor() {
-    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-      const saved = localStorage.getItem('hic_active_user');
-      if (saved) {
-        try {
-          this.currentUser.set(JSON.parse(saved));
-        } catch {
-          this.setGuestUser();
-        }
-      }
-    }
-  }
+  constructor() {}
 
 
   loginAs(role: UserRole) {

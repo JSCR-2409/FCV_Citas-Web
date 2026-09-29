@@ -13,8 +13,7 @@ View your app in AI Studio: https://ai.studio/apps/552f3732-adff-4dc0-b593-bd1c0
 **Prerequisites:**  Node.js
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. From the workspace root, run `docker compose up -d`.
+2. Open `http://localhost:4200`.
+
+The development container installs dependencies with `npm ci`, keeps Linux `node_modules` in a Docker volume, and runs Angular with host `0.0.0.0` on port `4200`.
