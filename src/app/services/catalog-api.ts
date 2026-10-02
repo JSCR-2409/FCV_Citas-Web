@@ -56,6 +56,43 @@ export interface MyAppointment {
   doctorName: string;
   facility: string;
   facilityFullName: string;
+  /** Necesarios para reprogramar: la nueva franja conserva profesional y especialidad. */
+  professionalId: number;
+  specialtyId: number;
+  durationMinutes: number;
+}
+
+/** Solicitud de reprogramación vista por el paciente. */
+export interface MyRescheduleRequest {
+  id: number;
+  appointmentId: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  previousStartAt: string;
+  requestedStartAt: string;
+  decisionReason: string | null;
+  patientAction: string | null;
+  specialtyName: string;
+  locationName: string;
+}
+
+/** Solicitud de reprogramación pendiente, tal como la ve el ADMIN. */
+export interface RescheduleRequest {
+  id: number;
+  appointmentId: number;
+  patientName: string;
+  professionalId: number;
+  professionalCode: string;
+  professionalName: string;
+  specialtyId: number;
+  specialtyName: string;
+  durationMinutes: number;
+  locationId: number;
+  locationName: string;
+  previousStartAt: string;
+  previousEndAt: string;
+  requestedStartAt: string;
+  requestedEndAt: string;
+  status: string;
 }
 
 export interface DecisionResult {
@@ -118,4 +155,32 @@ export class CatalogApi {
   }
   decideSpecializedRequest(id: number, status: 'APPROVED'|'REJECTED', reason?: string): Observable<DecisionResult> { return this.http.patch<DecisionResult>(`${this.baseUrl}/admin/specialized-requests/${id}`, { status, reason }); }
   cancelAppointment(id: number): Observable<void> { return this.http.patch<void>(`${this.baseUrl}/me/appointments/${id}/cancel`, {}); }
+
+  // --- Reprogramación: HU-024 (paciente), HU-029 y HU-030 (ADMIN) ---
+
+  requestReschedule(appointmentId: number, slotId: number): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/me/appointments/${appointmentId}/reschedule-requests`, { slotId });
+  }
+
+  myRescheduleRequests(): Observable<MyRescheduleRequest[]> {
+    return this.http.get<MyRescheduleRequest[]>(`${this.baseUrl}/me/reschedule-requests`);
+  }
+
+  respondAfterRejection(requestId: number, action: 'KEEP_APPOINTMENT' | 'CANCEL_APPOINTMENT'): Observable<unknown> {
+    return this.http.patch(`${this.baseUrl}/me/reschedule-requests/${requestId}/action`, { action });
+  }
+
+  rescheduleRequests(filters: SpecializedRequestFilters = {}): Observable<RescheduleRequest[]> {
+    const query = new URLSearchParams();
+    if (filters.locationId) query.set('locationId', String(filters.locationId));
+    if (filters.professionalId) query.set('professionalId', String(filters.professionalId));
+    if (filters.specialtyId) query.set('specialtyId', String(filters.specialtyId));
+    if (filters.date) query.set('date', filters.date);
+    const suffix = query.size ? `?${query}` : '';
+    return this.http.get<RescheduleRequest[]>(`${this.baseUrl}/admin/reschedule-requests${suffix}`);
+  }
+
+  decideReschedule(id: number, status: 'APPROVED' | 'REJECTED', reason?: string): Observable<DecisionResult> {
+    return this.http.patch<DecisionResult>(`${this.baseUrl}/admin/reschedule-requests/${id}`, { status, reason });
+  }
 }

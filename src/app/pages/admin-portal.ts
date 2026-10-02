@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { ClinicalDataState } from '../services/clinical-data';
-import { CatalogApi, SpecializedRequest } from '../services/catalog-api';
+import { CatalogApi, RescheduleRequest, SpecializedRequest } from '../services/catalog-api';
 
 export interface AdminModule {
   id: string;
@@ -15,7 +16,7 @@ export interface AdminModule {
 @Component({
   selector: 'app-admin-portal',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [],
+  imports: [DatePipe],
   template: `
     <div class="flex flex-col min-h-[calc(100vh-4rem)] w-full bg-[#f9f9ff]">
       
@@ -334,6 +335,111 @@ export interface AdminModule {
                   }
                 }
               </div>
+            } @else if (mod.id === 'reagendamientos') {
+              <!-- HU-029 y HU-030: bandeja de reprogramaciones con comparación de franjas -->
+              <div class="flex flex-col gap-2">
+                <span class="font-label-md text-[13px] text-[#001549] font-bold">Reprogramaciones pendientes:</span>
+
+                @if (decisionNotice()) {
+                  <p class="p-3 rounded-xl bg-[#e6f6ec] text-[#14532d] text-[12px] border border-[#bbe5c8]" role="status">
+                    {{ decisionNotice() }}
+                  </p>
+                }
+                @if (decisionError()) {
+                  <p class="p-3 rounded-xl bg-[#fdecec] text-[#7f1d1d] text-[12px] border border-[#f5c2c2]" role="alert">
+                    {{ decisionError() }}
+                  </p>
+                }
+
+                @if (loadingReschedules()) {
+                  <p class="p-3 text-[12px] text-[#444651]">Cargando reprogramaciones…</p>
+                } @else if (rescheduleRequests().length === 0) {
+                  <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">
+                    No hay reprogramaciones pendientes.
+                  </p>
+                } @else {
+                  @for (req of rescheduleRequests(); track req.id) {
+                    <div class="p-3 rounded-xl bg-[#f0f3ff] flex flex-col gap-2 text-[12px] border border-[#e7eeff]">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex flex-col">
+                          <span class="text-[#111c2c] font-bold">#{{ req.id }} · {{ req.patientName }}</span>
+                          <span class="text-[#444651]">
+                            {{ req.specialtyName }} · {{ req.durationMinutes }} min · {{ req.professionalName }}
+                            ({{ req.professionalCode }})
+                          </span>
+                          <span class="text-[#444651]">{{ req.locationName }}</span>
+                        </div>
+                        <div class="flex gap-2">
+                          <button
+                            type="button"
+                            [disabled]="busyId() === req.id"
+                            (click)="approveReschedule(req.id)"
+                            class="px-2.5 py-1 rounded bg-[#0056c3] text-white font-semibold text-[11px] hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer"
+                          >
+                            Aprobar
+                          </button>
+                          <button
+                            type="button"
+                            [disabled]="busyId() === req.id"
+                            (click)="startRejectReschedule(req.id)"
+                            class="px-2.5 py-1 rounded bg-white text-[#7f1d1d] border border-[#f5c2c2] font-semibold text-[11px] hover:bg-[#fdecec] disabled:opacity-50 cursor-pointer"
+                          >
+                            Rechazar
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-2 pt-2 border-t border-[#e7eeff]">
+                        <div class="flex flex-col">
+                          <span class="text-[10px] uppercase text-[#757682] font-semibold">Franja actual</span>
+                          <span class="text-[#111c2c] font-medium">
+                            {{ req.previousStartAt | date:'dd/MM/yyyy HH:mm' }}
+                          </span>
+                        </div>
+                        <div class="flex flex-col">
+                          <span class="text-[10px] uppercase text-[#757682] font-semibold">Franja propuesta</span>
+                          <span class="text-[#0056c3] font-bold">
+                            {{ req.requestedStartAt | date:'dd/MM/yyyy HH:mm' }}
+                          </span>
+                        </div>
+                      </div>
+
+                      @if (rejectingRescheduleId() === req.id) {
+                        <div class="flex flex-col gap-2 pt-2 border-t border-[#e7eeff]">
+                          <label class="text-[11px] font-bold text-[#001549]" [attr.for]="'motivo-rp-' + req.id">
+                            Motivo del rechazo (obligatorio)
+                          </label>
+                          <input
+                            [id]="'motivo-rp-' + req.id"
+                            type="text"
+                            [value]="rejectReason()"
+                            (input)="rejectReason.set($any($event.target).value)"
+                            class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]"
+                            placeholder="Indique por qué no procede la reprogramación"
+                          />
+                          <div class="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              (click)="cancelReject()"
+                              class="px-3 py-1.5 rounded bg-white text-[#111c2c] border border-[#e7eeff] text-[11px] font-semibold cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              [disabled]="rejectReason().trim().length === 0 || busyId() === req.id"
+                              (click)="confirmRejectReschedule(req.id)"
+                              class="px-3 py-1.5 rounded bg-[#b91c1c] text-white text-[11px] font-semibold hover:bg-[#dc2626] disabled:opacity-50 cursor-pointer"
+                            >
+                              Confirmar rechazo
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
+              </div>
             } @else {
               <div class="flex flex-col gap-2">
                 <span class="font-label-md text-[13px] text-[#001549] font-bold">Registros del Módulo:</span>
@@ -365,6 +471,9 @@ export class AdminPortal implements OnInit, OnDestroy {
   private catalogApi = inject(CatalogApi);
   specializedRequests = signal<SpecializedRequest[]>([]);
   loadingRequests = signal(false);
+  rescheduleRequests = signal<RescheduleRequest[]>([]);
+  loadingReschedules = signal(false);
+  rejectingRescheduleId = signal<number | null>(null);
   busyId = signal<number | null>(null);
   rejectingId = signal<number | null>(null);
   rejectReason = signal('');
@@ -457,6 +566,7 @@ export class AdminPortal implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.loadRequests();
+    this.loadReschedules();
     this.timerInterval = setInterval(() => {
       this.remainingSeconds.update((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
@@ -495,6 +605,71 @@ export class AdminPortal implements OnInit, OnDestroy {
         this.specializedRequests.set([]);
         this.loadingRequests.set(false);
         this.decisionError.set('No fue posible cargar las solicitudes pendientes.');
+      },
+    });
+  }
+
+  /** HU-029: la bandeja muestra solo las reprogramaciones PENDING. */
+  loadReschedules() {
+    this.loadingReschedules.set(true);
+    this.catalogApi.rescheduleRequests().subscribe({
+      next: requests => {
+        this.rescheduleRequests.set(requests);
+        this.loadingReschedules.set(false);
+        const module = this.modules.find(item => item.id === 'reagendamientos');
+        if (module) module.badge = `${requests.length} Pendientes`;
+      },
+      error: () => {
+        this.rescheduleRequests.set([]);
+        this.loadingReschedules.set(false);
+        this.decisionError.set('No fue posible cargar las reprogramaciones pendientes.');
+      },
+    });
+  }
+
+  /** HU-030 CA-01: aprobar libera la franja antigua y mueve la cita. */
+  approveReschedule(id: number) {
+    this.decideReschedule(id, 'APPROVED', undefined, `Reprogramación #${id} aprobada.`);
+  }
+
+  startRejectReschedule(id: number) {
+    this.rejectingRescheduleId.set(id);
+    this.rejectReason.set('');
+    this.decisionError.set(null);
+    this.decisionNotice.set(null);
+  }
+
+  /** HU-030 CA-02: el rechazo exige motivo, libera la propuesta y conserva la cita original. */
+  confirmRejectReschedule(id: number) {
+    const reason = this.rejectReason().trim();
+    if (!reason) {
+      this.decisionError.set('El motivo del rechazo es obligatorio.');
+      return;
+    }
+    this.decideReschedule(id, 'REJECTED', reason, `Reprogramación #${id} rechazada.`);
+  }
+
+  private decideReschedule(id: number, status: 'APPROVED' | 'REJECTED', reason: string | undefined, notice: string) {
+    this.busyId.set(id);
+    this.decisionError.set(null);
+    this.decisionNotice.set(null);
+    this.catalogApi.decideReschedule(id, status, reason).subscribe({
+      next: () => {
+        this.busyId.set(null);
+        this.rejectingRescheduleId.set(null);
+        this.rejectReason.set('');
+        this.decisionNotice.set(notice);
+        this.loadReschedules();
+      },
+      error: (err: unknown) => {
+        this.busyId.set(null);
+        const response = err as { status?: number; error?: { message?: string } };
+        this.decisionError.set(
+          response.status === 409
+            ? 'La reprogramación ya fue resuelta por otra persona. Se recargó la bandeja.'
+            : response.error?.message ?? 'No fue posible registrar la decisión.',
+        );
+        this.loadReschedules();
       },
     });
   }

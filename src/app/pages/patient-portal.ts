@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { Appointment, ClinicalDataState } from '../services/clinical-data';
-import { AvailabilityItem, CatalogApi } from '../services/catalog-api';
+import { AvailabilityItem, CatalogApi, MyRescheduleRequest } from '../services/catalog-api';
 
 @Component({
   selector: 'app-patient-portal',
@@ -202,7 +202,7 @@ import { AvailabilityItem, CatalogApi } from '../services/catalog-api';
                     <span class="material-symbols-outlined text-[26px]">event_available</span>
                   </div>
                   <span class="px-2.5 py-1 rounded-full bg-[#dee8ff] text-[#0056c3] font-caption text-[11px] font-bold">
-                    {{ clinicalState.appointments().length }} Cita{{ clinicalState.appointments().length !== 1 ? 's' : '' }} Próxima{{ clinicalState.appointments().length !== 1 ? 's' : '' }}
+                    {{ clinicalState.upcomingAppointments().length }} Cita{{ clinicalState.upcomingAppointments().length !== 1 ? 's' : '' }} Próxima{{ clinicalState.upcomingAppointments().length !== 1 ? 's' : '' }}
                   </span>
                 </div>
 
@@ -272,6 +272,263 @@ import { AvailabilityItem, CatalogApi } from '../services/catalog-api';
             </div>
 
           </div>
+
+          <!-- Listado completo de citas: la tarjeta de arriba solo resume la proxima -->
+          <section id="listado-citas" class="bg-white rounded-2xl p-6 shadow-sm border border-[#e7eeff] flex flex-col gap-4">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-[#e7eeff] text-[#001549] flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[22px]">list_alt</span>
+                </div>
+                <h3 class="font-label-md text-[15px] text-[#001549] font-bold">Mis citas</h3>
+              </div>
+              <button
+                type="button"
+                (click)="refreshAppointments()"
+                class="px-3 py-1.5 rounded-lg bg-[#f0f3ff] text-[#001549] text-[12px] font-semibold hover:bg-[#dee8ff] cursor-pointer"
+              >
+                Actualizar
+              </button>
+            </div>
+
+            @if (cancelMessage()) {
+              <p class="p-3 rounded-xl bg-[#f0f3ff] text-[#001549] text-[12px] border border-[#e7eeff]" role="status">
+                {{ cancelMessage() }}
+              </p>
+            }
+
+            <div class="flex flex-col gap-2">
+              <span class="font-micro text-[11px] uppercase text-[#757682] font-semibold tracking-wider">
+                Próximas ({{ clinicalState.upcomingAppointments().length }})
+              </span>
+              @if (clinicalState.upcomingAppointments().length === 0) {
+                <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">
+                  No tiene citas próximas. Use «Agendar nueva cita» para solicitar una.
+                </p>
+              } @else {
+                @for (app of clinicalState.upcomingAppointments(); track app.id) {
+                  <div class="p-3 rounded-xl bg-[#f0f3ff] border border-[#e7eeff] flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-label-md text-[13px] text-[#001549] font-bold">
+                        {{ app.specialty }} · {{ app.doctorName }}
+                      </span>
+                      <span class="font-caption text-[12px] text-[#444651]">
+                        {{ app.date }} • {{ app.time }} · {{ app.facilityFullName }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold" [class]="badgeClassFor(app.statusCode)">
+                        {{ app.status }}
+                      </span>
+                      <button
+                        type="button"
+                        (click)="openDetailFor(app)"
+                        class="px-2.5 py-1 rounded bg-[#dee8ff] text-[#001549] text-[11px] font-semibold hover:bg-[#cfdaf1] cursor-pointer"
+                      >
+                        Detalle
+                      </button>
+                      @if (app.statusCode === 'APPROVED') {
+                        <button
+                          type="button"
+                          (click)="startReschedule(app)"
+                          class="px-2.5 py-1 rounded bg-[#fff4e0] text-[#7c4a03] border border-[#f0d5a8] text-[11px] font-semibold hover:bg-[#ffe9c7] cursor-pointer"
+                        >
+                          Reprogramar
+                        </button>
+                      }
+                      <button
+                        type="button"
+                        [disabled]="cancellingId() === app.id"
+                        (click)="cancelActiveAppointment(app.id)"
+                        class="px-2.5 py-1 rounded bg-white text-[#7f1d1d] border border-[#f5c2c2] text-[11px] font-semibold hover:bg-[#fdecec] disabled:opacity-50 cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+
+            <!-- HU-024: estado de las solicitudes de reprogramación y decisión tras un rechazo -->
+            @if (rescheduleRequests().length > 0) {
+              <div class="flex flex-col gap-2 pt-2 border-t border-[#e7eeff]">
+                <span class="font-micro text-[11px] uppercase text-[#757682] font-semibold tracking-wider">
+                  Solicitudes de reprogramación
+                </span>
+                @for (req of rescheduleRequests(); track req.id) {
+                  <div class="p-3 rounded-xl bg-[#fffdf7] border border-[#f0d5a8] flex flex-col gap-2 text-[12px]">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="flex flex-col">
+                        <span class="font-label-md text-[13px] text-[#001549] font-bold">
+                          {{ req.specialtyName }} · cita #{{ req.appointmentId }}
+                        </span>
+                        <span class="text-[#444651]">
+                          De {{ req.previousStartAt | date:'dd/MM/yyyy HH:mm' }}
+                          a {{ req.requestedStartAt | date:'dd/MM/yyyy HH:mm' }}
+                        </span>
+                      </div>
+                      <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold" [class]="rescheduleBadge(req.status)">
+                        {{ rescheduleLabel(req.status) }}
+                      </span>
+                    </div>
+
+                    @if (req.decisionReason) {
+                      <p class="text-[#7f1d1d]">Motivo: {{ req.decisionReason }}</p>
+                    }
+
+                    @if (req.status === 'REJECTED' && !req.patientAction) {
+                      <div class="flex flex-wrap gap-2 justify-end pt-1 border-t border-[#f0d5a8]">
+                        <span class="text-[#444651] mr-auto">¿Desea conservar la cita original o cancelarla?</span>
+                        <button
+                          type="button"
+                          (click)="respondAfterRejection(req.id, 'KEEP_APPOINTMENT')"
+                          class="px-3 py-1.5 rounded bg-[#dee8ff] text-[#001549] text-[11px] font-semibold hover:bg-[#cfdaf1] cursor-pointer"
+                        >
+                          Conservar
+                        </button>
+                        <button
+                          type="button"
+                          (click)="respondAfterRejection(req.id, 'CANCEL_APPOINTMENT')"
+                          class="px-3 py-1.5 rounded bg-white text-[#7f1d1d] border border-[#f5c2c2] text-[11px] font-semibold hover:bg-[#fdecec] cursor-pointer"
+                        >
+                          Cancelar la cita
+                        </button>
+                      </div>
+                    } @else if (req.patientAction) {
+                      <p class="text-[#444651]">
+                        Decisión registrada:
+                        {{ req.patientAction === 'KEEP_APPOINTMENT' ? 'conservar la cita original' : 'cancelar la cita' }}
+                      </p>
+                    }
+                  </div>
+                }
+              </div>
+            }
+
+            @if (clinicalState.pastAppointments().length > 0) {
+              <div class="flex flex-col gap-2 pt-2 border-t border-[#e7eeff]">
+                <span class="font-micro text-[11px] uppercase text-[#757682] font-semibold tracking-wider">
+                  Historial ({{ clinicalState.pastAppointments().length }})
+                </span>
+                @for (app of clinicalState.pastAppointments(); track app.id) {
+                  <div class="p-3 rounded-xl bg-white border border-[#e7eeff] flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-col">
+                      <span class="font-label-md text-[13px] text-[#444651]">
+                        {{ app.specialty }} · {{ app.doctorName }}
+                      </span>
+                      <span class="font-caption text-[12px] text-[#757682]">
+                        {{ app.date }} • {{ app.time }} · {{ app.facilityFullName }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold" [class]="badgeClassFor(app.statusCode)">
+                        {{ app.status }}
+                      </span>
+                      <button
+                        type="button"
+                        (click)="openDetailFor(app)"
+                        class="px-2.5 py-1 rounded bg-[#f0f3ff] text-[#001549] text-[11px] font-semibold hover:bg-[#dee8ff] cursor-pointer"
+                      >
+                        Detalle
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+
+          <!-- HU-024: modal de reprogramación. Conserva profesional y especialidad por contrato. -->
+          @if (reschedulingAppointment(); as app) {
+            <div class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog">
+              <div class="bg-white rounded-2xl p-6 w-full max-w-lg flex flex-col gap-4 shadow-xl">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex flex-col">
+                    <h3 class="font-label-md text-[16px] text-[#001549] font-bold">Reprogramar cita</h3>
+                    <span class="text-[12px] text-[#444651]">
+                      {{ app.specialty }} · {{ app.doctorName }} · {{ app.durationMinutes }} min
+                    </span>
+                    <span class="text-[12px] text-[#444651]">
+                      Actual: {{ app.date }} • {{ app.time }}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="closeReschedule()"
+                    class="text-[#757682] hover:text-[#001549] cursor-pointer"
+                    aria-label="Cerrar"
+                  >
+                    <span class="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+
+                <p class="text-[12px] text-[#444651] p-3 rounded-xl bg-[#f0f3ff] border border-[#e7eeff]">
+                  Se conservan el profesional y la especialidad. La cita actual se mantiene hasta que
+                  la coordinación decida, y la franja nueva queda retenida mientras tanto.
+                </p>
+
+                <label class="flex flex-col gap-1">
+                  <span class="text-[11px] font-bold text-[#001549] uppercase tracking-wider">Nueva fecha</span>
+                  <input
+                    type="date"
+                    [value]="rescheduleDate()"
+                    [min]="today()"
+                    (change)="rescheduleDate.set($any($event.target).value); searchRescheduleSlots()"
+                    class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[13px]"
+                  />
+                </label>
+
+                <div class="flex flex-col gap-1">
+                  <label for="nueva-franja" class="text-[11px] font-bold text-[#001549] uppercase tracking-wider">
+                    Nueva franja
+                  </label>
+                  @if (rescheduleSlots().length === 0) {
+                    <span class="text-[12px] text-[#444651] p-3 rounded-lg bg-[#f0f3ff] border border-[#e7eeff]">
+                      No hay franjas disponibles de este profesional para esa fecha.
+                    </span>
+                  } @else {
+                    <select
+                      id="nueva-franja"
+                      [value]="rescheduleSlotId() ?? ''"
+                      (change)="rescheduleSlotId.set(Number($any($event.target).value))"
+                      class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[13px]"
+                    >
+                      @for (slot of rescheduleSlots(); track slot.slotId) {
+                        <option [value]="slot.slotId">
+                          {{ slot.startAt | date:'HH:mm' }} — {{ slot.locationName }}
+                        </option>
+                      }
+                    </select>
+                  }
+                </div>
+
+                @if (rescheduleMessage()) {
+                  <p class="text-[12px] p-3 rounded-xl bg-[#fdecec] text-[#7f1d1d] border border-[#f5c2c2]" role="alert">
+                    {{ rescheduleMessage() }}
+                  </p>
+                }
+
+                <div class="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    (click)="closeReschedule()"
+                    class="px-4 py-2 rounded-xl bg-white text-[#111c2c] border border-[#e7eeff] text-[13px] font-semibold cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    [disabled]="!rescheduleSlotId() || submittingReschedule()"
+                    (click)="submitReschedule()"
+                    class="px-4 py-2 rounded-xl bg-[#0056c3] text-white text-[13px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer"
+                  >
+                    Solicitar reprogramación
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
 
           <!-- Protocol & Clinical Assistance Recommendations -->
           <section class="bg-white rounded-2xl p-6 shadow-sm border border-[#e7eeff] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -646,7 +903,7 @@ import { AvailabilityItem, CatalogApi } from '../services/catalog-api';
     }
   `,
 })
-export class PatientPortal {
+export class PatientPortal implements OnInit {
   clinicalState = inject(ClinicalDataState);
   router = inject(Router);
   catalogApi = inject(CatalogApi);
@@ -659,6 +916,18 @@ export class PatientPortal {
   showFacilities = signal(false);
 
   selectedAppointment = signal<Appointment | null>(null);
+  cancellingId = signal<string | null>(null);
+  cancelMessage = signal('');
+
+  // HU-024 — reprogramación
+  rescheduleRequests = signal<MyRescheduleRequest[]>([]);
+  reschedulingAppointment = signal<Appointment | null>(null);
+  rescheduleDate = signal('');
+  rescheduleSlots = signal<AvailabilityItem[]>([]);
+  rescheduleSlotId = signal<number | null>(null);
+  rescheduleMessage = signal('');
+  submittingReschedule = signal(false);
+  protected readonly Number = Number;
 
   // Booking fields
   bookSpecialty = signal('Medicina General');
@@ -673,9 +942,116 @@ export class PatientPortal {
   today() { return new Date().toISOString().slice(0, 10); }
   startBooking() { const date = new Date(); date.setDate(date.getDate() + 1); this.bookDate.set(date.toISOString().slice(0, 10)); this.openBookingModal.set(true); this.searchAvailability(); }
 
+  /** La proxima cita vigente. Antes devolvia apps[0], que con el orden descendente era la ultima. */
   primaryAppointment() {
-    const apps = this.clinicalState.appointments();
-    return apps.length > 0 ? apps[0] : null;
+    return this.clinicalState.nextAppointment();
+  }
+
+  openDetailFor(appointment: Appointment) {
+    this.selectedAppointment.set(appointment);
+    this.showDetailModal.set(true);
+  }
+
+  startReschedule(appointment: Appointment) {
+    this.reschedulingAppointment.set(appointment);
+    this.rescheduleMessage.set('');
+    this.rescheduleSlotId.set(null);
+    this.rescheduleSlots.set([]);
+    // Arranca en el día siguiente al actual de la cita, que es el caso habitual.
+    const next = new Date(appointment.startAt);
+    next.setDate(next.getDate() + 1);
+    this.rescheduleDate.set(next.toISOString().slice(0, 10));
+    this.searchRescheduleSlots();
+  }
+
+  closeReschedule() {
+    this.reschedulingAppointment.set(null);
+    this.rescheduleSlots.set([]);
+    this.rescheduleSlotId.set(null);
+    this.rescheduleMessage.set('');
+  }
+
+  /** Solo franjas del mismo profesional y especialidad: el backend rechaza cualquier otra. */
+  searchRescheduleSlots() {
+    const appointment = this.reschedulingAppointment();
+    const date = this.rescheduleDate();
+    if (!appointment || !date) return;
+    this.catalogApi.availability({
+      date,
+      specialtyId: appointment.specialtyId,
+      professionalId: appointment.professionalId,
+    }).subscribe({
+      next: result => {
+        const options = result.items.filter(slot => slot.startAt !== appointment.startAt);
+        this.rescheduleSlots.set(options);
+        this.rescheduleSlotId.set(options[0]?.slotId ?? null);
+      },
+      error: () => {
+        this.rescheduleSlots.set([]);
+        this.rescheduleSlotId.set(null);
+        this.rescheduleMessage.set('No fue posible consultar la disponibilidad.');
+      },
+    });
+  }
+
+  submitReschedule() {
+    const appointment = this.reschedulingAppointment();
+    const slotId = this.rescheduleSlotId();
+    if (!appointment || !slotId) return;
+    this.submittingReschedule.set(true);
+    this.rescheduleMessage.set('');
+    this.catalogApi.requestReschedule(Number(appointment.id), slotId).subscribe({
+      next: () => {
+        this.submittingReschedule.set(false);
+        this.closeReschedule();
+        this.cancelMessage.set('Solicitud de reprogramación enviada. La cita actual se mantiene hasta la decisión.');
+        this.refreshAppointments();
+      },
+      error: (err: { status?: number; error?: { message?: string } }) => {
+        this.submittingReschedule.set(false);
+        this.rescheduleMessage.set(err.error?.message ?? 'No fue posible registrar la solicitud.');
+        this.searchRescheduleSlots();
+      },
+    });
+  }
+
+  respondAfterRejection(requestId: number, action: 'KEEP_APPOINTMENT' | 'CANCEL_APPOINTMENT') {
+    this.catalogApi.respondAfterRejection(requestId, action).subscribe({
+      next: () => {
+        this.cancelMessage.set(action === 'KEEP_APPOINTMENT'
+          ? 'Se conserva la cita original.'
+          : 'La cita fue cancelada.');
+        this.refreshAppointments();
+      },
+      error: (err: { error?: { message?: string } }) =>
+        this.cancelMessage.set(err.error?.message ?? 'No fue posible registrar su decisión.'),
+    });
+  }
+
+  rescheduleLabel(status: string) {
+    switch (status) {
+      case 'PENDING': return 'Pendiente de decisión';
+      case 'APPROVED': return 'Aprobada';
+      case 'REJECTED': return 'Rechazada';
+      default: return 'Cancelada';
+    }
+  }
+
+  rescheduleBadge(status: string) {
+    switch (status) {
+      case 'PENDING': return 'bg-[#fff4e0] text-[#7c4a03]';
+      case 'APPROVED': return 'bg-[#e6f6ec] text-[#14532d]';
+      default: return 'bg-[#fdecec] text-[#7f1d1d]';
+    }
+  }
+
+  badgeClassFor(statusCode: string) {
+    switch (statusCode) {
+      case 'APPROVED': return 'bg-[#e6f6ec] text-[#14532d]';
+      case 'REQUESTED': return 'bg-[#fff4e0] text-[#7c4a03]';
+      case 'COMPLETED': return 'bg-[#e7eeff] text-[#001549]';
+      default: return 'bg-[#fdecec] text-[#7f1d1d]';
+    }
   }
 
   scrollToAppointments() {
@@ -719,8 +1095,35 @@ export class PatientPortal {
   selectSlot(id: string) { this.selectedSlot.set(this.availability().find(slot => String(slot.slotId) === id) ?? null); }
 
   cancelActiveAppointment(id: string) {
-    this.catalogApi.cancelAppointment(Number(id)).subscribe({ next: () => { this.refreshAppointments(); this.showDetailModal.set(false); }, error: () => this.bookingMessage.set('No fue posible cancelar la cita.') });
+    this.cancellingId.set(id);
+    this.cancelMessage.set('');
+    this.catalogApi.cancelAppointment(Number(id)).subscribe({
+      next: () => {
+        this.cancellingId.set(null);
+        this.cancelMessage.set(`Cita #${id} cancelada.`);
+        this.refreshAppointments();
+        this.showDetailModal.set(false);
+      },
+      error: (err: { status?: number }) => {
+        this.cancellingId.set(null);
+        // El backend solo cancela citas propias, futuras y en APPROVED o REQUESTED.
+        this.cancelMessage.set(err.status === 409
+          ? 'Esa cita ya no se puede cancelar: o ya pasó, o cambió de estado.'
+          : 'No fue posible cancelar la cita.');
+        this.refreshAppointments();
+      },
+    });
   }
 
-  refreshAppointments() { this.catalogApi.myAppointments().subscribe({ next: items => this.clinicalState.setAppointmentsFromApi(items) }); }
+  ngOnInit() {
+    this.refreshAppointments();
+  }
+
+  refreshAppointments() {
+    this.catalogApi.myAppointments().subscribe({ next: items => this.clinicalState.setAppointmentsFromApi(items) });
+    this.catalogApi.myRescheduleRequests().subscribe({
+      next: items => this.rescheduleRequests.set(items),
+      error: () => this.rescheduleRequests.set([]),
+    });
+  }
 }

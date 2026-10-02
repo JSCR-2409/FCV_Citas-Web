@@ -6,6 +6,19 @@ import { ACCESS_TOKEN_KEY, roleFromClaim, storedRoles } from './jwt-role';
 export type { UserRole } from './jwt-role';
 import type { UserRole } from './jwt-role';
 
+/** Etiquetas de presentacion de los seis estados de cita del PRD. */
+const STATUS_LABELS: Record<string, Appointment['status']> = {
+  APPROVED: 'Confirmada',
+  REQUESTED: 'En Espera',
+  COMPLETED: 'Atendida',
+  CANCELLED: 'Cancelada',
+  REJECTED: 'Rechazada',
+  NO_SHOW: 'No asistió',
+};
+
+/** Estados en los que la cita sigue viva: el resto son terminales. */
+const ACTIVE_STATUSES = new Set(['APPROVED', 'REQUESTED']);
+
 export interface UserProfile {
   name: string;
   /** Rol de presentacion. Para decidir accesos se usa `roles`. */
@@ -30,8 +43,16 @@ export interface Appointment {
   facilityFullName: string;
   date: string;
   time: string;
+  /** Instante de inicio sin formatear, para ordenar y comparar con el momento actual. */
+  startAt: string;
+  /** Codigo de estado del backend; `status` es solo la etiqueta de presentacion. */
+  statusCode: string;
+  /** Para reprogramar: la nueva franja conserva profesional y especialidad. */
+  professionalId: number;
+  specialtyId: number;
+  durationMinutes: number;
   type: 'Presencial' | 'Teleconsulta';
-  status: 'Confirmada' | 'En Espera' | 'Atendida' | 'Cancelada';
+  status: 'Confirmada' | 'En Espera' | 'Atendida' | 'Cancelada' | 'Rechazada' | 'No asistió';
   preparationNote?: string;
   room?: string;
 }
@@ -65,7 +86,51 @@ export class ClinicalDataState {
 
   /** Recarga solo las citas y conserva la sesion, sin reconstruir el perfil. */
   setAppointmentsFromApi(remoteAppointments: MyAppointment[]) {
-    this.appointments.set(remoteAppointments.map(item => ({ id: String(item.id), doctorName: item.doctorName, specialty: item.specialty, facility: item.facility === 'ICV' ? 'ICV' : 'HIC', facilityFullName: item.facilityFullName, date: new Date(item.startAt).toLocaleDateString('es-CO'), time: new Date(item.startAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }), type: 'Presencial', status: item.status === 'APPROVED' ? 'Confirmada' : item.status === 'REQUESTED' ? 'En Espera' : item.status === 'COMPLETED' ? 'Atendida' : 'Cancelada' } as Appointment)));
+    this.appointments.set(remoteAppointments.map(item => {
+      const start = new Date(item.startAt);
+      return {
+        id: String(item.id),
+        doctorName: item.doctorName,
+        specialty: item.specialty,
+        facility: item.facility === 'ICV' ? 'ICV' : 'HIC',
+        facilityFullName: item.facilityFullName,
+        date: start.toLocaleDateString('es-CO'),
+        time: start.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+        startAt: item.startAt,
+        statusCode: item.status,
+        professionalId: item.professionalId,
+        specialtyId: item.specialtyId,
+        durationMinutes: item.durationMinutes,
+        type: 'Presencial',
+        status: STATUS_LABELS[item.status] ?? item.status,
+      } as Appointment;
+    }));
+  }
+
+  /** Citas que siguen vigentes y aun no han ocurrido, de la mas proxima a la mas lejana. */
+  upcomingAppointments(): Appointment[] {
+    const now = Date.now();
+    return this.appointments()
+      .filter(a => ACTIVE_STATUSES.has(a.statusCode) && new Date(a.startAt).getTime() >= now)
+      .sort((a, b) => a.startAt.localeCompare(b.startAt));
+  }
+
+  /** Citas ya pasadas o en un estado terminal, de la mas reciente a la mas antigua. */
+  pastAppointments(): Appointment[] {
+    const upcoming = new Set(this.upcomingAppointments().map(a => a.id));
+    return this.appointments()
+      .filter(a => !upcoming.has(a.id))
+      .sort((a, b) => b.startAt.localeCompare(a.startAt));
+  }
+
+  /** La siguiente cita vigente, o null. */
+  nextAppointment(): Appointment | null {
+    return this.upcomingAppointments()[0] ?? null;
+  }
+
+  /** Solo una cita vigente y futura puede cancelarse; el backend aplica la misma regla. */
+  canBeCancelled(appointment: Appointment): boolean {
+    return ACTIVE_STATUSES.has(appointment.statusCode) && new Date(appointment.startAt).getTime() >= Date.now();
   }
 
   logout() {
