@@ -703,22 +703,6 @@ export class PatientPortal {
       next: () => { this.bookingMessage.set('Cita creada correctamente.'); this.refreshAppointments(); this.openBookingModal.set(false); },
       error: err => this.bookingMessage.set(err.status === 409 ? 'El horario acaba de ser ocupado.' : 'No fue posible crear la cita.')
     });
-    return;
-    /* legacy visual fallback kept below for offline mock preview */
-    const facName = this.bookFacility() === 'HIC' ? 'Hospital Internacional de Colombia' : 'Instituto Cardiovascular ICV';
-    this.clinicalState.addAppointment({
-      doctorName: this.bookDoctor(),
-      specialty: this.bookSpecialty(),
-      facility: this.bookFacility(),
-      facilityFullName: facName,
-      date: this.bookDate(),
-      time: this.bookTime(),
-      type: 'Presencial',
-      status: 'Confirmada',
-      preparationNote: 'Presentarse con 20 minutos de antelación con documento de identidad y orden médica.',
-      room: 'Consultorio 301 • Piso 3',
-    });
-    this.openBookingModal.set(false);
   }
 
   searchAvailability() {

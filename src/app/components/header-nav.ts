@@ -36,27 +36,15 @@ import { ClinicalDataState } from '../services/clinical-data';
 
         <!-- Center: navegación contextual, sin exponer autenticación dentro del portal -->
         @if (clinicalState.currentUser()) { <div class="hidden xl:flex items-center bg-[#f0f3ff] p-1 rounded-lg gap-0.5 border border-[#c5c6d3]/40">
-          <a
-            routerLink="/portal/paciente"
-            routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
-            class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
-          >
-            Portal Paciente
-          </a>
-          <a
-            routerLink="/portal/medico"
-            routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
-            class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
-          >
-            Panel Médico
-          </a>
-          <a
-            routerLink="/portal/admin"
-            routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
-            class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
-          >
-            Consola Admin
-          </a>
+          @for (portal of portals(); track portal.path) {
+            <a
+              [routerLink]="portal.path"
+              routerLinkActive="bg-[#ffffff] text-[#001549] shadow-sm font-semibold"
+              class="px-2.5 py-1 text-[12px] rounded-md text-[#444651] hover:text-[#001549] transition-all"
+            >
+              {{ portal.label }}
+            </a>
+          }
         </div> }
 
         <!-- Right: Actions -->
@@ -109,4 +97,14 @@ import { ClinicalDataState } from '../services/clinical-data';
 })
 export class HeaderNav {
   clinicalState = inject(ClinicalDataState);
+
+  /** Solo los portales del rol que tiene el usuario; antes se mostraban los tres a cualquiera. */
+  portals() {
+    const roles = this.clinicalState.availableRoles();
+    return ([
+      { role: 'paciente', path: '/portal/paciente', label: 'Portal Paciente' },
+      { role: 'medico', path: '/portal/medico', label: 'Panel Médico' },
+      { role: 'admin', path: '/portal/admin', label: 'Consola Admin' },
+    ] as const).filter(portal => roles.includes(portal.role));
+  }
 }
