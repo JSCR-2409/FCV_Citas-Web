@@ -101,6 +101,24 @@ export interface DecisionResult {
   reason: string;
 }
 
+/** Bloque de disponibilidad del profesional, tal como lo entrega el calendario. */
+export interface AvailabilityBlock {
+  id: number;
+  locationId: number;
+  locationName: string;
+  availableDate: string;
+  startTime: string;
+  endTime: string;
+  active: boolean;
+}
+
+export interface AvailabilityBlockInput {
+  locationId: number;
+  availableDate: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface SpecializedRequestFilters {
   locationId?: number;
   professionalId?: number;
@@ -155,6 +173,28 @@ export class CatalogApi {
   }
   decideSpecializedRequest(id: number, status: 'APPROVED'|'REJECTED', reason?: string): Observable<DecisionResult> { return this.http.patch<DecisionResult>(`${this.baseUrl}/admin/specialized-requests/${id}`, { status, reason }); }
   cancelAppointment(id: number): Observable<void> { return this.http.patch<void>(`${this.baseUrl}/me/appointments/${id}/cancel`, {}); }
+
+  // --- Bloques de disponibilidad del profesional: HU-016, HU-017 y HU-018 ---
+
+  availabilityBlocks(from?: string, to?: string): Observable<AvailabilityBlock[]> {
+    const query = new URLSearchParams();
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    const suffix = query.size ? `?${query}` : '';
+    return this.http.get<AvailabilityBlock[]>(`${this.baseUrl}/professional/availability-blocks${suffix}`);
+  }
+
+  createAvailabilityBlock(block: AvailabilityBlockInput): Observable<{ id: number }> {
+    return this.http.post<{ id: number }>(`${this.baseUrl}/professional/availability-blocks`, block);
+  }
+
+  updateAvailabilityBlock(id: number, block: AvailabilityBlockInput): Observable<unknown> {
+    return this.http.put(`${this.baseUrl}/professional/availability-blocks/${id}`, block);
+  }
+
+  deleteAvailabilityBlock(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/professional/availability-blocks/${id}`);
+  }
 
   // --- Reprogramación: HU-024 (paciente), HU-029 y HU-030 (ADMIN) ---
 
