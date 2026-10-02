@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ClinicalDataState } from '../services/clinical-data';
-import { CatalogApi, RescheduleRequest, SpecializedRequest } from '../services/catalog-api';
+import {
+  AdminProfessional, AdminSpecialty, CatalogApi, LocationItem, RescheduleRequest, SpecializedRequest,
+} from '../services/catalog-api';
 
 export interface AdminModule {
   id: string;
@@ -440,6 +442,210 @@ export interface AdminModule {
                   }
                 }
               </div>
+            } @else if (mod.id === 'especialidades') {
+              <!-- HU-012: alta, duración restringida a 30 o 60 y desactivación sin borrar -->
+              <div class="flex flex-col gap-3">
+                @if (decisionNotice()) {
+                  <p class="p-3 rounded-xl bg-[#e6f6ec] text-[#14532d] text-[12px] border border-[#bbe5c8]" role="status">{{ decisionNotice() }}</p>
+                }
+                @if (decisionError()) {
+                  <p class="p-3 rounded-xl bg-[#fdecec] text-[#7f1d1d] text-[12px] border border-[#f5c2c2]" role="alert">{{ decisionError() }}</p>
+                }
+
+                <div class="p-3 rounded-xl bg-[#f0f3ff] border border-[#e7eeff] flex flex-col gap-2">
+                  <span class="text-[11px] font-bold text-[#001549] uppercase tracking-wider">Nueva especialidad</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                    <input [value]="spCode()" (input)="spCode.set($any($event.target).value)"
+                      placeholder="Código" aria-label="Código"
+                      class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="spName()" (input)="spName.set($any($event.target).value)"
+                      placeholder="Nombre" aria-label="Nombre"
+                      class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <select [value]="spDuration()" (change)="spDuration.set(Number($any($event.target).value))"
+                      aria-label="Duración" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]">
+                      <option [value]="30">30 minutos</option>
+                      <option [value]="60">60 minutos</option>
+                    </select>
+                    <select [value]="spGeneral() ? 'true' : 'false'"
+                      (change)="spGeneral.set($any($event.target).value === 'true')"
+                      aria-label="Tipo" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]">
+                      <option value="false">Especializada (requiere aprobación)</option>
+                      <option value="true">General (aprobación automática)</option>
+                    </select>
+                  </div>
+                  <div class="flex justify-end">
+                    <button type="button" [disabled]="spCode().trim().length === 0 || spName().trim().length === 0"
+                      (click)="createSpecialty()"
+                      class="px-4 py-1.5 rounded bg-[#0056c3] text-white text-[11px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                      Crear
+                    </button>
+                  </div>
+                </div>
+
+                @if (specialties().length === 0) {
+                  <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">Sin especialidades registradas.</p>
+                } @else {
+                  @for (sp of specialties(); track sp.id) {
+                    <div class="p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-[12px]"
+                      [class]="sp.active ? 'bg-[#f0f3ff] border-[#e7eeff]' : 'bg-white border-[#f0d5a8]'">
+                      <div class="flex flex-col">
+                        <span class="text-[#111c2c] font-bold">{{ sp.name }} <span class="font-normal text-[#757682]">({{ sp.code }})</span></span>
+                        <span class="text-[#444651]">
+                          {{ sp.durationMinutes }} min · {{ sp.general ? 'General' : 'Especializada' }}
+                          @if (!sp.active) { · <span class="text-[#7c4a03] font-semibold">desactivada</span> }
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button type="button" (click)="toggleDuration(sp)"
+                          class="px-2.5 py-1 rounded bg-[#dee8ff] text-[#001549] text-[11px] font-semibold hover:bg-[#cfdaf1] cursor-pointer">
+                          Pasar a {{ sp.durationMinutes === 30 ? 60 : 30 }} min
+                        </button>
+                        <button type="button" (click)="toggleSpecialtyActive(sp)"
+                          class="px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer"
+                          [class]="sp.active ? 'bg-white text-[#7f1d1d] border border-[#f5c2c2] hover:bg-[#fdecec]' : 'bg-[#e6f6ec] text-[#14532d] border border-[#bbe5c8]'">
+                          {{ sp.active ? 'Desactivar' : 'Reactivar' }}
+                        </button>
+                      </div>
+                    </div>
+                  }
+                  <p class="text-[11px] text-[#757682]">
+                    Las especialidades no se borran: se desactivan, para no perder las citas que las referencian.
+                  </p>
+                }
+              </div>
+            } @else if (mod.id === 'profesionales') {
+              <!-- HU-013 alta, HU-014 especialidades y HU-015 sedes y estado -->
+              <div class="flex flex-col gap-3">
+                @if (decisionNotice()) {
+                  <p class="p-3 rounded-xl bg-[#e6f6ec] text-[#14532d] text-[12px] border border-[#bbe5c8]" role="status">{{ decisionNotice() }}</p>
+                }
+                @if (decisionError()) {
+                  <p class="p-3 rounded-xl bg-[#fdecec] text-[#7f1d1d] text-[12px] border border-[#f5c2c2]" role="alert">{{ decisionError() }}</p>
+                }
+
+                <div class="p-3 rounded-xl bg-[#f0f3ff] border border-[#e7eeff] flex flex-col gap-2">
+                  <span class="text-[11px] font-bold text-[#001549] uppercase tracking-wider">Nuevo profesional</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <input [value]="prNames()" (input)="prNames.set($any($event.target).value)" placeholder="Nombres" aria-label="Nombres" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prSurnames()" (input)="prSurnames.set($any($event.target).value)" placeholder="Apellidos" aria-label="Apellidos" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prDocument()" (input)="prDocument.set($any($event.target).value)" placeholder="Documento" aria-label="Documento" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prEmail()" (input)="prEmail.set($any($event.target).value)" placeholder="Correo" type="email" aria-label="Correo" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prPhone()" (input)="prPhone.set($any($event.target).value)" placeholder="Teléfono" aria-label="Teléfono" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prCode()" (input)="prCode.set($any($event.target).value)" placeholder="Código profesional" aria-label="Código profesional" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prLicense()" (input)="prLicense.set($any($event.target).value)" placeholder="Matrícula" aria-label="Matrícula" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                    <input [value]="prPassword()" (input)="prPassword.set($any($event.target).value)" placeholder="Contraseña temporal (12+)" type="password" aria-label="Contraseña temporal" class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]" />
+                  </div>
+                  <p class="text-[11px] text-[#757682]">
+                    El profesional no se autorregistra: lo crea la coordinación. La contraseña nunca se devuelve ni se registra.
+                  </p>
+                  <div class="flex justify-end">
+                    <button type="button" [disabled]="!professionalFormReady()" (click)="createProfessional()"
+                      class="px-4 py-1.5 rounded bg-[#0056c3] text-white text-[11px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                      Crear profesional
+                    </button>
+                  </div>
+                </div>
+
+                @if (professionals().length === 0) {
+                  <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">Sin profesionales registrados.</p>
+                } @else {
+                  @for (pro of professionals(); track pro.id) {
+                    <div class="p-3 rounded-xl border flex flex-col gap-2 text-[12px]"
+                      [class]="pro.active ? 'bg-[#f0f3ff] border-[#e7eeff]' : 'bg-white border-[#f0d5a8]'">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex flex-col">
+                          <span class="text-[#111c2c] font-bold">
+                            {{ pro.name }} <span class="font-normal text-[#757682]">({{ pro.professionalCode }})</span>
+                            @if (!pro.active) { <span class="text-[#7c4a03]">· inactivo</span> }
+                          </span>
+                          <span class="text-[#444651]">{{ pro.email }} · matrícula {{ pro.licenseNumber }}</span>
+                          <span class="text-[#444651]">
+                            Sedes: {{ pro.locations.length ? namesOf(pro.locations) : 'ninguna' }}
+                          </span>
+                          <span class="text-[#444651]">
+                            Especialidades: {{ pro.specialties.length ? specialtyLabels(pro) : 'ninguna' }}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <button type="button" (click)="startAssign(pro)"
+                            class="px-2.5 py-1 rounded bg-[#dee8ff] text-[#001549] text-[11px] font-semibold hover:bg-[#cfdaf1] cursor-pointer">
+                            Asignar
+                          </button>
+                          <button type="button" (click)="toggleProfessionalActive(pro)"
+                            class="px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer"
+                            [class]="pro.active ? 'bg-white text-[#7f1d1d] border border-[#f5c2c2] hover:bg-[#fdecec]' : 'bg-[#e6f6ec] text-[#14532d] border border-[#bbe5c8]'">
+                            {{ pro.active ? 'Desactivar' : 'Reactivar' }}
+                          </button>
+                        </div>
+                      </div>
+
+                      @if (assigningId() === pro.id) {
+                        <div class="flex flex-col gap-3 pt-2 border-t border-[#e7eeff]">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] font-bold text-[#001549] uppercase tracking-wider">Sedes</span>
+                            <div class="flex flex-wrap gap-3">
+                              @for (loc of locations(); track loc.id) {
+                                <label class="flex items-center gap-1.5">
+                                  <input type="checkbox" [checked]="draftLocations().includes(loc.id)"
+                                    (change)="toggleDraftLocation(loc.id)" />
+                                  <span>{{ loc.name }}</span>
+                                </label>
+                              }
+                            </div>
+                          </div>
+
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] font-bold text-[#001549] uppercase tracking-wider">
+                              Especialidades — exactamente una principal
+                            </span>
+                            <div class="flex flex-col gap-1">
+                              @for (sp of activeSpecialties(); track sp.id) {
+                                <div class="flex items-center gap-3">
+                                  <label class="flex items-center gap-1.5 min-w-[220px]">
+                                    <input type="checkbox" [checked]="isDraftSpecialty(sp.id)"
+                                      (change)="toggleDraftSpecialty(sp.id)" />
+                                    <span>{{ sp.name }} ({{ sp.durationMinutes }} min)</span>
+                                  </label>
+                                  @if (isDraftSpecialty(sp.id)) {
+                                    <label class="flex items-center gap-1.5 text-[#0056c3]">
+                                      <input type="radio" name="primaria" [checked]="isDraftPrimary(sp.id)"
+                                        (change)="setDraftPrimary(sp.id)" />
+                                      <span>principal</span>
+                                    </label>
+                                  }
+                                </div>
+                              }
+                            </div>
+                          </div>
+
+                          <div class="flex justify-end gap-2">
+                            <button type="button" (click)="cancelAssign()"
+                              class="px-3 py-1.5 rounded bg-white text-[#111c2c] border border-[#e7eeff] text-[11px] font-semibold cursor-pointer">
+                              Cancelar
+                            </button>
+                            <button type="button" [disabled]="busyId() === pro.id" (click)="saveAssignments(pro.id)"
+                              class="px-3 py-1.5 rounded bg-[#0056c3] text-white text-[11px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                              Guardar asignaciones
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
+              </div>
+            } @else if (mod.id === 'convenios' || mod.id === 'auditoria') {
+              <div class="flex flex-col gap-2">
+                <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">
+                  @if (mod.id === 'convenios') {
+                    Todavía no está disponible. Administrar EPS y sus planes corresponde a HU-010 y
+                    HU-011, y la afiliación del paciente a HU-008; ninguna está implementada.
+                  } @else {
+                    Todavía no está disponible. El historial de cambios de estado corresponde a
+                    HU-031, que aún no está implementada.
+                  }
+                </p>
+              </div>
             } @else {
               <div class="flex flex-col gap-2">
                 <span class="font-label-md text-[13px] text-[#001549] font-bold">Registros del Módulo:</span>
@@ -474,6 +680,30 @@ export class AdminPortal implements OnInit, OnDestroy {
   rescheduleRequests = signal<RescheduleRequest[]>([]);
   loadingReschedules = signal(false);
   rejectingRescheduleId = signal<number | null>(null);
+
+  // HU-012 — especialidades
+  specialties = signal<AdminSpecialty[]>([]);
+  spCode = signal('');
+  spName = signal('');
+  spDuration = signal(30);
+  spGeneral = signal(false);
+
+  // HU-013, HU-014, HU-015 — profesionales
+  professionals = signal<AdminProfessional[]>([]);
+  locations = signal<LocationItem[]>([]);
+  assigningId = signal<number | null>(null);
+  draftLocations = signal<number[]>([]);
+  draftSpecialties = signal<{ id: number; primary: boolean }[]>([]);
+  prNames = signal('');
+  prSurnames = signal('');
+  prDocument = signal('');
+  prEmail = signal('');
+  prPhone = signal('');
+  prCode = signal('');
+  prLicense = signal('');
+  prPassword = signal('');
+
+  protected readonly Number = Number;
   busyId = signal<number | null>(null);
   rejectingId = signal<number | null>(null);
   rejectReason = signal('');
@@ -567,6 +797,9 @@ export class AdminPortal implements OnInit, OnDestroy {
   ngOnInit() {
     this.loadRequests();
     this.loadReschedules();
+    this.loadSpecialties();
+    this.loadProfessionals();
+    this.catalogApi.locations().subscribe({ next: items => this.locations.set(items) });
     this.timerInterval = setInterval(() => {
       this.remainingSeconds.update((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
@@ -607,6 +840,226 @@ export class AdminPortal implements OnInit, OnDestroy {
         this.decisionError.set('No fue posible cargar las solicitudes pendientes.');
       },
     });
+  }
+
+  // ---------- HU-012: especialidades ----------
+
+  loadSpecialties() {
+    this.catalogApi.adminSpecialties().subscribe({
+      next: items => {
+        this.specialties.set(items);
+        const module = this.modules.find(item => item.id === 'especialidades');
+        if (module) module.badge = `${items.filter(s => s.active).length} Activas`;
+      },
+      error: () => this.decisionError.set('No fue posible cargar las especialidades.'),
+    });
+  }
+
+  activeSpecialties() {
+    return this.specialties().filter(sp => sp.active);
+  }
+
+  createSpecialty() {
+    this.clearMessages();
+    this.catalogApi.createSpecialty({
+      code: this.spCode().trim().toUpperCase(),
+      name: this.spName().trim(),
+      durationMinutes: this.spDuration(),
+      general: this.spGeneral(),
+      requiresAdminApproval: !this.spGeneral(),
+    }).subscribe({
+      next: () => {
+        this.decisionNotice.set('Especialidad creada.');
+        this.spCode.set('');
+        this.spName.set('');
+        this.loadSpecialties();
+      },
+      error: (err: unknown) => this.decisionError.set(this.messageOf(err, 'No fue posible crear la especialidad.')),
+    });
+  }
+
+  /** La duración solo admite 30 o 60, y el backend lo valida también al actualizar. */
+  toggleDuration(specialty: AdminSpecialty) {
+    this.patchSpecialty(specialty.id, { durationMinutes: specialty.durationMinutes === 30 ? 60 : 30 },
+      `Duración de ${specialty.name} actualizada.`);
+  }
+
+  /** HU-012 CA-02: no se borra una especialidad referenciada; se desactiva. */
+  toggleSpecialtyActive(specialty: AdminSpecialty) {
+    this.patchSpecialty(specialty.id, { active: !specialty.active },
+      specialty.active ? `${specialty.name} desactivada.` : `${specialty.name} reactivada.`);
+  }
+
+  private patchSpecialty(id: number, changes: { durationMinutes?: number; active?: boolean }, notice: string) {
+    this.clearMessages();
+    this.catalogApi.updateSpecialty(id, changes).subscribe({
+      next: () => {
+        this.decisionNotice.set(notice);
+        this.loadSpecialties();
+      },
+      error: (err: unknown) => this.decisionError.set(this.messageOf(err, 'No fue posible actualizar la especialidad.')),
+    });
+  }
+
+  // ---------- HU-013, HU-014, HU-015: profesionales ----------
+
+  loadProfessionals() {
+    this.catalogApi.adminProfessionals().subscribe({
+      next: items => {
+        this.professionals.set(items);
+        const module = this.modules.find(item => item.id === 'profesionales');
+        if (module) module.badge = `${items.filter(p => p.active).length} Activos`;
+      },
+      error: () => this.decisionError.set('No fue posible cargar los profesionales.'),
+    });
+  }
+
+  professionalFormReady() {
+    return [this.prNames(), this.prSurnames(), this.prDocument(), this.prEmail(), this.prPhone(),
+      this.prCode(), this.prLicense()].every(value => value.trim().length > 0)
+      && this.prPassword().length >= 12;
+  }
+
+  /** HU-013: solo el ADMIN crea profesionales; no hay autorregistro. */
+  createProfessional() {
+    this.clearMessages();
+    this.catalogApi.createProfessional({
+      names: this.prNames().trim(),
+      surnames: this.prSurnames().trim(),
+      documentType: 'CC',
+      documentNumber: this.prDocument().trim(),
+      email: this.prEmail().trim(),
+      phone: this.prPhone().trim(),
+      temporaryPassword: this.prPassword(),
+      professionalCode: this.prCode().trim().toUpperCase(),
+      licenseNumber: this.prLicense().trim(),
+    }).subscribe({
+      next: () => {
+        this.decisionNotice.set('Profesional creado. Debe asignarle sedes y especialidades para que pueda publicar agenda.');
+        for (const field of [this.prNames, this.prSurnames, this.prDocument, this.prEmail,
+          this.prPhone, this.prCode, this.prLicense, this.prPassword]) field.set('');
+        this.loadProfessionals();
+      },
+      error: (err: unknown) => this.decisionError.set(this.messageOf(err, 'No fue posible crear el profesional.')),
+    });
+  }
+
+  startAssign(professional: AdminProfessional) {
+    this.assigningId.set(professional.id);
+    this.draftLocations.set(professional.locations.map(l => l.id));
+    this.draftSpecialties.set(professional.specialties.map(s => ({ id: s.id, primary: s.primary })));
+    this.clearMessages();
+  }
+
+  cancelAssign() {
+    this.assigningId.set(null);
+  }
+
+  toggleDraftLocation(id: number) {
+    const current = this.draftLocations();
+    this.draftLocations.set(current.includes(id) ? current.filter(x => x !== id) : [...current, id]);
+  }
+
+  isDraftSpecialty(id: number) {
+    return this.draftSpecialties().some(s => s.id === id);
+  }
+
+  isDraftPrimary(id: number) {
+    return this.draftSpecialties().some(s => s.id === id && s.primary);
+  }
+
+  toggleDraftSpecialty(id: number) {
+    const current = this.draftSpecialties();
+    if (current.some(s => s.id === id)) {
+      const remaining = current.filter(s => s.id !== id);
+      // Si se quita la principal, la primera que quede toma el relevo: HU-014 CA-02 exige
+      // exactamente una, y el backend rechaza cero o varias.
+      if (remaining.length > 0 && !remaining.some(s => s.primary)) remaining[0] = { ...remaining[0], primary: true };
+      this.draftSpecialties.set(remaining);
+    } else {
+      this.draftSpecialties.set([...current, { id, primary: current.length === 0 }]);
+    }
+  }
+
+  setDraftPrimary(id: number) {
+    this.draftSpecialties.set(this.draftSpecialties().map(s => ({ ...s, primary: s.id === id })));
+  }
+
+  /** HU-014 y HU-015: dos llamadas distintas, porque son endpoints distintos del contrato. */
+  saveAssignments(professionalId: number) {
+    this.busyId.set(professionalId);
+    this.clearMessages();
+    this.catalogApi.assignLocations(professionalId, this.draftLocations()).subscribe({
+      next: () => {
+        const specialties = this.draftSpecialties();
+        if (specialties.length === 0) {
+          this.busyId.set(null);
+          this.assigningId.set(null);
+          this.decisionNotice.set('Sedes actualizadas. No se asignó ninguna especialidad.');
+          this.loadProfessionals();
+          return;
+        }
+        this.catalogApi.assignSpecialties(professionalId, specialties).subscribe({
+          next: () => {
+            this.busyId.set(null);
+            this.assigningId.set(null);
+            this.decisionNotice.set('Sedes y especialidades actualizadas.');
+            this.loadProfessionals();
+          },
+          error: (err: unknown) => {
+            this.busyId.set(null);
+            this.decisionError.set(this.messageOf(err, 'No fue posible asignar las especialidades.'));
+            this.loadProfessionals();
+          },
+        });
+      },
+      error: (err: unknown) => {
+        this.busyId.set(null);
+        this.decisionError.set(this.messageOf(err, 'No fue posible asignar las sedes.'));
+      },
+    });
+  }
+
+  /** HU-015 CA-03: un profesional desactivado deja de ofrecerse y no puede publicar agenda. */
+  toggleProfessionalActive(professional: AdminProfessional) {
+    this.busyId.set(professional.id);
+    this.clearMessages();
+    this.catalogApi.setProfessionalActive(professional.id, !professional.active).subscribe({
+      next: () => {
+        this.busyId.set(null);
+        this.decisionNotice.set(professional.active
+          ? `${professional.name} desactivado: deja de ofrecerse en disponibilidad.`
+          : `${professional.name} reactivado.`);
+        this.loadProfessionals();
+      },
+      error: (err: unknown) => {
+        this.busyId.set(null);
+        this.decisionError.set(this.messageOf(err, 'No fue posible cambiar el estado.'));
+      },
+    });
+  }
+
+  namesOf(items: { name: string }[]) {
+    return items.map(item => item.name).join(', ');
+  }
+
+  specialtyLabels(professional: AdminProfessional) {
+    return professional.specialties
+      .map(s => s.primary ? `${s.name} (principal)` : s.name)
+      .join(', ');
+  }
+
+  private clearMessages() {
+    this.decisionNotice.set(null);
+    this.decisionError.set(null);
+  }
+
+  private messageOf(err: unknown, fallback: string): string {
+    const response = err as { status?: number; error?: { message?: string } };
+    if (response.error?.message) return response.error.message;
+    if (response.status === 409) return 'Ya existe un registro con esos identificadores.';
+    if (response.status === 400) return 'Datos inválidos: revise el formulario.';
+    return fallback;
   }
 
   /** HU-029: la bandeja muestra solo las reprogramaciones PENDING. */

@@ -101,6 +101,50 @@ export interface DecisionResult {
   reason: string;
 }
 
+/** Especialidad completa que ve el ADMIN, incluidas las desactivadas. */
+export interface AdminSpecialty {
+  id: number;
+  code: string;
+  name: string;
+  durationMinutes: number;
+  general: boolean;
+  requiresAdminApproval: boolean;
+  active: boolean;
+}
+
+export interface SpecialtyInput {
+  code: string;
+  name: string;
+  durationMinutes: number;
+  general: boolean;
+  requiresAdminApproval: boolean;
+}
+
+/** Profesional con sus asignaciones, tal como lo lista el ADMIN. */
+export interface AdminProfessional {
+  id: number;
+  professionalCode: string;
+  licenseNumber: string;
+  active: boolean;
+  userId: number;
+  name: string;
+  email: string;
+  specialties: { id: number; name: string; primary: boolean; active: boolean }[];
+  locations: { id: number; name: string }[];
+}
+
+export interface ProfessionalInput {
+  names: string;
+  surnames: string;
+  documentType: string;
+  documentNumber: string;
+  email: string;
+  phone: string;
+  temporaryPassword: string;
+  professionalCode: string;
+  licenseNumber: string;
+}
+
 /** Bloque de disponibilidad del profesional, tal como lo entrega el calendario. */
 export interface AvailabilityBlock {
   id: number;
@@ -173,6 +217,40 @@ export class CatalogApi {
   }
   decideSpecializedRequest(id: number, status: 'APPROVED'|'REJECTED', reason?: string): Observable<DecisionResult> { return this.http.patch<DecisionResult>(`${this.baseUrl}/admin/specialized-requests/${id}`, { status, reason }); }
   cancelAppointment(id: number): Observable<void> { return this.http.patch<void>(`${this.baseUrl}/me/appointments/${id}/cancel`, {}); }
+
+  // --- Administración de especialidades y profesionales: HU-012 a HU-015 ---
+
+  adminSpecialties(): Observable<AdminSpecialty[]> {
+    return this.http.get<AdminSpecialty[]>(`${this.baseUrl}/admin/specialties`);
+  }
+
+  createSpecialty(specialty: SpecialtyInput): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/admin/specialties`, specialty);
+  }
+
+  updateSpecialty(id: number, changes: { name?: string; durationMinutes?: number; active?: boolean }): Observable<unknown> {
+    return this.http.patch(`${this.baseUrl}/admin/specialties/${id}`, changes);
+  }
+
+  adminProfessionals(): Observable<AdminProfessional[]> {
+    return this.http.get<AdminProfessional[]>(`${this.baseUrl}/admin/professionals`);
+  }
+
+  createProfessional(professional: ProfessionalInput): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/admin/professionals`, professional);
+  }
+
+  assignSpecialties(id: number, assignments: { id: number; primary: boolean }[]): Observable<unknown> {
+    return this.http.put(`${this.baseUrl}/admin/professionals/${id}/specialties`, { assignments });
+  }
+
+  assignLocations(id: number, ids: number[]): Observable<unknown> {
+    return this.http.put(`${this.baseUrl}/admin/professionals/${id}/locations`, { ids });
+  }
+
+  setProfessionalActive(id: number, active: boolean): Observable<unknown> {
+    return this.http.patch(`${this.baseUrl}/admin/professionals/${id}/active`, { active });
+  }
 
   // --- Bloques de disponibilidad del profesional: HU-016, HU-017 y HU-018 ---
 
