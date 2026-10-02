@@ -2,7 +2,8 @@ import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit, signal }
 import { DatePipe } from '@angular/common';
 import { ClinicalDataState } from '../services/clinical-data';
 import {
-  AdminProfessional, AdminSpecialty, CatalogApi, LocationItem, RescheduleRequest, SpecializedRequest,
+  AdminEps, AdminEpsPlan, AdminProfessional, AdminSpecialty, CatalogApi, CatalogItem, HistoryEntry,
+  LocationItem, RescheduleRequest, SpecializedRequest,
 } from '../services/catalog-api';
 
 export interface AdminModule {
@@ -634,17 +635,173 @@ export interface AdminModule {
                   }
                 }
               </div>
-            } @else if (mod.id === 'convenios' || mod.id === 'auditoria') {
-              <div class="flex flex-col gap-2">
-                <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">
-                  @if (mod.id === 'convenios') {
-                    Todavía no está disponible. Administrar EPS y sus planes corresponde a HU-010 y
-                    HU-011, y la afiliación del paciente a HU-008; ninguna está implementada.
-                  } @else {
-                    Todavía no está disponible. El historial de cambios de estado corresponde a
-                    HU-031, que aún no está implementada.
+            } @else if (mod.id === 'convenios') {
+              <!-- HU-010 EPS y HU-011 planes. No hay botón de borrar: RF-06 prohíbe el borrado
+                   físico de un catálogo referenciado, así que la baja es la desactivación. -->
+              <div class="flex flex-col gap-4">
+                @if (epsError()) { <div class="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-[12px]">{{ epsError() }}</div> }
+
+                <form class="flex flex-wrap items-end gap-2 p-3 rounded-xl bg-[#f8faff] border border-[#e7eeff]"
+                  (submit)="createEps($event)">
+                  <div class="flex flex-col gap-1">
+                    <label class="font-caption text-[11px] text-[#757682]" for="epsCode">Código</label>
+                    <input id="epsCode" [value]="epsCode()" (input)="epsCode.set($any($event.target).value)"
+                      placeholder="EPS_NUEVA" class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] w-36" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="font-caption text-[11px] text-[#757682]" for="epsName">Nombre</label>
+                    <input id="epsName" [value]="epsName()" (input)="epsName.set($any($event.target).value)"
+                      placeholder="Nombre de la EPS" class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] w-56" />
+                  </div>
+                  <button type="submit" [disabled]="epsBusy()"
+                    class="px-3 py-1.5 rounded-lg bg-[#0056c3] text-white text-[12px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                    Crear EPS
+                  </button>
+                </form>
+
+                @for (item of epsList(); track item.id) {
+                  <div class="p-3 rounded-xl border border-[#e7eeff] flex flex-col gap-2"
+                    [class]="item.active ? 'bg-white' : 'bg-[#f6f6f8]'">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="flex flex-col">
+                        <span class="font-label-md text-[13px] text-[#001549] font-semibold">{{ item.name }}</span>
+                        <span class="font-caption text-[11px] text-[#757682]">
+                          {{ item.code }} · {{ item.planCount }} plan(es)
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded text-[11px] font-semibold"
+                          [class]="item.active ? 'bg-[#dcf4e4] text-[#13532f]' : 'bg-[#e4e4e8] text-[#444651]'">
+                          {{ item.active ? 'Activa' : 'Inactiva' }}
+                        </span>
+                        <button type="button" [disabled]="epsBusy()" (click)="toggleEps(item)"
+                          class="px-2.5 py-1 rounded border border-[#c3c5d4] bg-white text-[11px] font-semibold text-[#001549] hover:bg-[#f0f3ff] disabled:opacity-50 cursor-pointer">
+                          {{ item.active ? 'Desactivar' : 'Reactivar' }}
+                        </button>
+                        <button type="button" (click)="openPlans(item.id)"
+                          class="px-2.5 py-1 rounded bg-[#001549] text-white text-[11px] font-semibold hover:bg-[#002777] cursor-pointer">
+                          {{ planEpsId() === item.id ? 'Ocultar planes' : 'Ver planes' }}
+                        </button>
+                      </div>
+                    </div>
+
+                    @if (planEpsId() === item.id) {
+                      <div class="flex flex-col gap-2 pt-2 border-t border-[#e7eeff]">
+                        @if (item.active) {
+                          <form class="flex flex-wrap items-end gap-2" (submit)="createPlan($event, item.id)">
+                            <div class="flex flex-col gap-1">
+                              <label class="font-caption text-[11px] text-[#757682]" for="planCode">Código</label>
+                              <input id="planCode" [value]="planCode()" (input)="planCode.set($any($event.target).value)"
+                                class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] w-32" />
+                            </div>
+                            <div class="flex flex-col gap-1">
+                              <label class="font-caption text-[11px] text-[#757682]" for="planName">Nombre</label>
+                              <input id="planName" [value]="planName()" (input)="planName.set($any($event.target).value)"
+                                class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] w-48" />
+                            </div>
+                            <div class="flex flex-col gap-1">
+                              <label class="font-caption text-[11px] text-[#757682]" for="planRegime">Régimen</label>
+                              <select id="planRegime" [value]="planRegimeId() ?? ''"
+                                (change)="planRegimeId.set(Number($any($event.target).value))"
+                                class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px]">
+                                @for (regime of regimes(); track regime.id) {
+                                  <option [value]="regime.id">{{ regime.name }}</option>
+                                }
+                              </select>
+                            </div>
+                            <button type="submit" [disabled]="epsBusy()"
+                              class="px-3 py-1.5 rounded-lg bg-[#0056c3] text-white text-[12px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                              Crear plan
+                            </button>
+                          </form>
+                        } @else {
+                          <p class="font-caption text-[11px] text-[#757682]">
+                            La EPS está inactiva: sus planes no se pueden crear ni reactivar hasta que lo esté.
+                          </p>
+                        }
+
+                        @if (plans().length === 0) {
+                          <p class="font-caption text-[11px] text-[#757682]">Esta EPS no tiene planes registrados.</p>
+                        } @else {
+                          @for (plan of plans(); track plan.id) {
+                            <div class="px-3 py-2 rounded-lg bg-[#f8faff] border border-[#e7eeff] flex items-center justify-between gap-2">
+                              <span class="text-[12px] text-[#001549]">
+                                {{ plan.name }} <span class="text-[#757682]">· {{ plan.code }} · {{ plan.regimeName }}</span>
+                              </span>
+                              <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded text-[11px] font-semibold"
+                                  [class]="plan.active ? 'bg-[#dcf4e4] text-[#13532f]' : 'bg-[#e4e4e8] text-[#444651]'">
+                                  {{ plan.active ? 'Activo' : 'Inactivo' }}
+                                </span>
+                                <button type="button" [disabled]="epsBusy()" (click)="togglePlan(plan)"
+                                  class="px-2.5 py-1 rounded border border-[#c3c5d4] bg-white text-[11px] font-semibold text-[#001549] hover:bg-[#f0f3ff] disabled:opacity-50 cursor-pointer">
+                                  {{ plan.active ? 'Desactivar' : 'Reactivar' }}
+                                </button>
+                              </div>
+                            </div>
+                          }
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            } @else if (mod.id === 'auditoria') {
+              <!-- HU-031. Cada fila lleva actor y fuente; la fuente SYSTEM no tiene actor. -->
+              <div class="flex flex-col gap-3">
+                @if (historyError()) { <div class="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-[12px]">{{ historyError() }}</div> }
+
+                <div class="flex flex-wrap items-end gap-2 p-3 rounded-xl bg-[#f8faff] border border-[#e7eeff]">
+                  <div class="flex flex-col gap-1">
+                    <label class="font-caption text-[11px] text-[#757682]" for="histAppointment">Cita</label>
+                    <input id="histAppointment" type="number" min="1" [value]="histAppointmentId() ?? ''"
+                      (input)="histAppointmentId.set($any($event.target).value ? Number($any($event.target).value) : null)"
+                      placeholder="Todas" class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] w-28" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="font-caption text-[11px] text-[#757682]" for="histFrom">Desde</label>
+                    <input id="histFrom" type="date" [value]="histFrom()" (change)="histFrom.set($any($event.target).value)"
+                      class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px]" />
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="font-caption text-[11px] text-[#757682]" for="histTo">Hasta</label>
+                    <input id="histTo" type="date" [value]="histTo()" (change)="histTo.set($any($event.target).value)"
+                      class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px]" />
+                  </div>
+                  <button type="button" [disabled]="historyLoading()" (click)="loadHistory()"
+                    class="px-3 py-1.5 rounded-lg bg-[#0056c3] text-white text-[12px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                    Consultar
+                  </button>
+                </div>
+
+                @if (historyLoading()) {
+                  <p class="font-body-md text-[12px] text-[#757682]">Cargando el historial…</p>
+                } @else if (history().length === 0) {
+                  <p class="font-body-md text-[12px] text-[#757682]">No hay transiciones registradas para ese filtro.</p>
+                } @else {
+                  @for (entry of history(); track entry.id) {
+                    <div class="p-3 rounded-xl bg-white border border-[#e7eeff] flex flex-wrap items-center justify-between gap-2">
+                      <div class="flex flex-col gap-0.5">
+                        <span class="font-label-md text-[12px] text-[#001549] font-semibold">
+                          Cita #{{ entry.appointmentId }} → {{ entry.statusCode }}
+                        </span>
+                        <span class="font-caption text-[11px] text-[#757682]">
+                          {{ entry.changedAt | date: 'd MMM y, HH:mm' }} ·
+                          {{ entry.actorName ?? 'Sin actor (automático)' }}
+                        </span>
+                        @if (entry.reason) {
+                          <span class="font-caption text-[11px] text-[#444651] italic">{{ entry.reason }}</span>
+                        }
+                      </div>
+                      <span class="px-2 py-0.5 rounded text-[11px] font-semibold"
+                        [class]="entry.changeSource === 'ADMIN' ? 'bg-[#dee8ff] text-[#001549]'
+                          : entry.changeSource === 'USER' ? 'bg-[#dcf4e4] text-[#13532f]'
+                          : 'bg-[#e4e4e8] text-[#444651]'">
+                        {{ entry.changeSource }}
+                      </span>
+                    </div>
                   }
-                </p>
+                }
               </div>
             } @else {
               <div class="flex flex-col gap-2">
@@ -687,6 +844,27 @@ export class AdminPortal implements OnInit, OnDestroy {
   spName = signal('');
   spDuration = signal(30);
   spGeneral = signal(false);
+
+  // HU-010 y HU-011 — EPS y planes
+  epsList = signal<AdminEps[]>([]);
+  plans = signal<AdminEpsPlan[]>([]);
+  regimes = signal<CatalogItem[]>([]);
+  planEpsId = signal<number | null>(null);
+  epsBusy = signal(false);
+  epsError = signal('');
+  epsCode = signal('');
+  epsName = signal('');
+  planCode = signal('');
+  planName = signal('');
+  planRegimeId = signal<number | null>(null);
+
+  // HU-031 — auditoría de cambios de estado
+  history = signal<HistoryEntry[]>([]);
+  historyLoading = signal(false);
+  historyError = signal('');
+  histAppointmentId = signal<number | null>(null);
+  histFrom = signal('');
+  histTo = signal('');
 
   // HU-013, HU-014, HU-015 — profesionales
   professionals = signal<AdminProfessional[]>([]);
@@ -769,28 +947,21 @@ export class AdminPortal implements OnInit, OnDestroy {
     },
     {
       id: 'convenios',
-      title: 'Convenios EPS y Planes',
-      badge: '24 Entidades',
-      description: 'Sura, Sanitas, Colsánitas, Seguros Bolívar y planes particulares.',
+      title: 'EPS y planes',
+      badge: '—',
+      description: 'Catálogo configurable de EPS y sus planes por régimen. HU-010 y HU-011.',
       icon: 'handshake',
       badgeColor: 'bg-[#dee8ff] text-[#0056c3]',
-      details: [
-        'Sura Medicina Prepagada - Sincronización Automática API',
-        'Sanitas EPS - Cupos autorizados en línea',
-        'Seguros Bolívar - Pólizas de Salud Internacional',
-      ],
+      details: [],
     },
     {
       id: 'auditoria',
-      title: 'Pistas de Auditoría y Trazabilidad',
-      badge: 'En Integración',
-      description: 'Registro inmutable de transacciones, aperturas de turno y accesos.',
+      title: 'Auditoría de cambios de estado',
+      badge: '—',
+      description: 'Cada transición de una cita con su actor, fuente, fecha y motivo. HU-031.',
       icon: 'security',
       badgeColor: 'bg-[#e7eeff] text-[#111c2c]',
-      details: [
-        'Token MED-ICV-7740: 12 Accesos a Historia Clínica auditados',
-        'Cambio de agenda #AG-8819 registrado con firma digital',
-      ],
+      details: [],
     },
   ];
 
@@ -822,6 +993,147 @@ export class AdminPortal implements OnInit, OnDestroy {
 
   openModule(mod: AdminModule) {
     this.selectedModule.set(mod);
+    // Cada panel carga sus propios datos al abrirse, en lugar de traerlo todo al iniciar: la
+    // auditoría puede devolver cientos de filas y no tiene sentido pedirlas si nadie la abre.
+    if (mod.id === 'convenios') this.loadEps();
+    if (mod.id === 'auditoria') this.loadHistory();
+  }
+
+  // --- HU-010 y HU-011: EPS y planes -------------------------------------------------------
+
+  loadEps() {
+    this.epsError.set('');
+    this.catalogApi.adminEps().subscribe({
+      next: items => {
+        this.epsList.set(items);
+        const module = this.modules.find(item => item.id === 'convenios');
+        if (module) module.badge = `${items.filter(e => e.active).length} Activas`;
+      },
+      error: () => this.epsError.set('No fue posible cargar las EPS.'),
+    });
+    if (this.regimes().length === 0) {
+      this.catalogApi.regimes().subscribe({
+        next: items => {
+          this.regimes.set(items);
+          if (this.planRegimeId() === null) this.planRegimeId.set(items[0]?.id ?? null);
+        },
+        error: () => this.epsError.set('No fue posible cargar los regímenes.'),
+      });
+    }
+  }
+
+  createEps(event: Event) {
+    event.preventDefault();
+    const code = this.epsCode().trim();
+    const name = this.epsName().trim();
+    if (!code || !name) { this.epsError.set('El código y el nombre son obligatorios.'); return; }
+    this.epsBusy.set(true);
+    this.epsError.set('');
+    this.catalogApi.createEps(code, name).subscribe({
+      next: () => {
+        this.epsBusy.set(false);
+        this.epsCode.set('');
+        this.epsName.set('');
+        this.loadEps();
+      },
+      error: err => {
+        this.epsBusy.set(false);
+        this.epsError.set(err.status === 409 ? 'Ya existe una EPS con ese código.' : 'No fue posible crear la EPS.');
+      },
+    });
+  }
+
+  /** Desactivar en lugar de borrar: RF-06 lo exige para un catálogo con referencias. */
+  toggleEps(item: AdminEps) {
+    this.epsBusy.set(true);
+    this.epsError.set('');
+    this.catalogApi.updateEps(item.id, { active: !item.active }).subscribe({
+      next: () => {
+        this.epsBusy.set(false);
+        this.loadEps();
+        if (this.planEpsId() === item.id) this.loadPlans(item.id);
+      },
+      error: () => { this.epsBusy.set(false); this.epsError.set('No fue posible cambiar el estado de la EPS.'); },
+    });
+  }
+
+  openPlans(epsId: number) {
+    if (this.planEpsId() === epsId) { this.planEpsId.set(null); this.plans.set([]); return; }
+    this.planEpsId.set(epsId);
+    this.loadPlans(epsId);
+  }
+
+  /** CA-03 de HU-011: los planes se piden por EPS, de modo que no se mezclan entre aseguradoras. */
+  loadPlans(epsId: number) {
+    this.catalogApi.adminEpsPlans(epsId).subscribe({
+      next: items => this.plans.set(items),
+      error: () => this.epsError.set('No fue posible cargar los planes.'),
+    });
+  }
+
+  createPlan(event: Event, epsId: number) {
+    event.preventDefault();
+    const code = this.planCode().trim();
+    const name = this.planName().trim();
+    const regimeId = this.planRegimeId();
+    if (!code || !name || regimeId === null) {
+      this.epsError.set('El código, el nombre y el régimen son obligatorios.');
+      return;
+    }
+    this.epsBusy.set(true);
+    this.epsError.set('');
+    this.catalogApi.createEpsPlan({ epsId, regimeId, code, name }).subscribe({
+      next: () => {
+        this.epsBusy.set(false);
+        this.planCode.set('');
+        this.planName.set('');
+        this.loadPlans(epsId);
+        this.loadEps();
+      },
+      error: err => {
+        this.epsBusy.set(false);
+        this.epsError.set(err.status === 409
+          ? 'Esa EPS ya tiene un plan con ese código.'
+          : 'No fue posible crear el plan. Verifique que la EPS esté activa.');
+      },
+    });
+  }
+
+  togglePlan(plan: AdminEpsPlan) {
+    this.epsBusy.set(true);
+    this.epsError.set('');
+    this.catalogApi.updateEpsPlan(plan.id, { active: !plan.active }).subscribe({
+      next: () => { this.epsBusy.set(false); this.loadPlans(plan.epsId); },
+      error: () => {
+        this.epsBusy.set(false);
+        this.epsError.set('No fue posible cambiar el estado del plan. Un plan de una EPS inactiva no se reactiva.');
+      },
+    });
+  }
+
+  // --- HU-031: auditoría -------------------------------------------------------------------
+
+  loadHistory() {
+    this.historyLoading.set(true);
+    this.historyError.set('');
+    this.catalogApi.appointmentHistory({
+      appointmentId: this.histAppointmentId() ?? undefined,
+      from: this.histFrom() || undefined,
+      to: this.histTo() || undefined,
+      limit: 100,
+    }).subscribe({
+      next: response => {
+        this.history.set(response.items);
+        this.historyLoading.set(false);
+        const module = this.modules.find(item => item.id === 'auditoria');
+        if (module) module.badge = `${response.count} Registros`;
+      },
+      error: () => {
+        this.history.set([]);
+        this.historyLoading.set(false);
+        this.historyError.set('No fue posible cargar el historial.');
+      },
+    });
   }
 
   /** HU-027: la bandeja muestra solo las solicitudes REQUESTED que entrega el backend. */

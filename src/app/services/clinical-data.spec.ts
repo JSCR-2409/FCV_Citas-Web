@@ -25,6 +25,7 @@ describe('ClinicalDataState — clasificacion de citas', () => {
     professionalId: 1,
     specialtyId: 1,
     durationMinutes: 30,
+    reason: null,
   });
 
   const future = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 19);
@@ -101,5 +102,18 @@ describe('ClinicalDataState — clasificacion de citas', () => {
     expect(state.canBeCancelled(byId.get('1')!)).toBe(true);
     expect(state.canBeCancelled(byId.get('2')!)).toBe(false);
     expect(state.canBeCancelled(byId.get('3')!)).toBe(false);
+  });
+
+  /**
+   * HU-022 CA-03. El motivo del rechazo administrativo debe llegar hasta la vista: si se perdiera
+   * en la proyeccion, la pantalla mostraria "Rechazada" sin explicar por que.
+   */
+  it('conserva el motivo del rechazo y lo deja en null cuando no aplica', () => {
+    const rejected = { ...appointment(1, 'REJECTED', past(1)), reason: 'El profesional no atiende ese día' };
+    state.setAppointmentsFromApi([rejected, appointment(2, 'APPROVED', future(1))]);
+    const byId = new Map(state.appointments().map(a => [a.id, a]));
+
+    expect(byId.get('1')!.reason).toBe('El profesional no atiende ese día');
+    expect(byId.get('2')!.reason).toBeNull();
   });
 });

@@ -200,10 +200,16 @@ import { API_BASE_URL } from '../services/api-base-url';
                     <div class="w-12 h-12 rounded-full bg-[#0056c3] text-white flex items-center justify-center shadow-md">
                       <span class="material-symbols-outlined text-[26px]">mark_email_read</span>
                     </div>
-                    <h3 class="font-label-md text-[16px] text-[#001549] font-bold">¡Cuenta verificada!</h3>
+                    <h3 class="font-label-md text-[16px] text-[#001549] font-bold">Solicitud registrada</h3>
                     <p class="font-body-md text-[13px] text-[#444651] max-w-md">
-                      Verificamos la cuenta <strong class="text-[#001549]">{{ recoveryEmail() }}</strong>. Como el correo es opcional, puede continuar directamente al cambio de contraseña.
+                      Si <strong class="text-[#001549]">{{ recoveryEmail() }}</strong> corresponde a una cuenta activa, se generó un código de un solo uso válido por 30 minutos.
                     </p>
+                    @if (recoveryToken()) {
+                      <p class="font-caption text-[11px] text-[#444651] max-w-md">
+                        Entorno de laboratorio: el código se entrega aquí porque el envío por correo es opcional.
+                        En un entorno real llegaría al buzón y se pegaría en el paso siguiente.
+                      </p>
+                    }
                     <div class="pt-2 flex flex-col sm:flex-row items-center gap-3">
                       <button
                         (click)="activeStep.set(2)"
@@ -239,7 +245,30 @@ import { API_BASE_URL } from '../services/api-base-url';
 
                 @if (!passwordChanged()) {
                   <form class="flex flex-col gap-4" (submit)="handlePasswordReset($event)">
-                    
+
+                    <!-- Field 0: código de un solo uso (HU-006) -->
+                    <div class="flex flex-col gap-1.5">
+                      <label class="font-label-md text-[13px] text-[#001549] font-semibold" for="recoveryToken">
+                        Código de recuperación
+                      </label>
+                      <div class="relative flex items-center">
+                        <span class="material-symbols-outlined absolute left-3.5 text-[#757682] text-[20px] pointer-events-none">key</span>
+                        <input
+                          id="recoveryToken"
+                          name="recoveryToken"
+                          type="text"
+                          autocomplete="one-time-code"
+                          placeholder="Pegue aquí el código de un solo uso"
+                          class="w-full pl-11 pr-4 py-3 rounded-xl border border-[#c3c5d4] bg-white font-mono text-[12px] text-[#001549] focus:outline-none focus:border-[#0056c3] focus:ring-2 focus:ring-[#0056c3]/20 transition-all"
+                          [value]="recoveryToken()"
+                          (input)="recoveryToken.set($any($event.target).value)"
+                        />
+                      </div>
+                      <p class="font-caption text-[11px] text-[#757682]">
+                        Un solo uso y válido por 30 minutos. Si venció, vuelva al paso 1 y solicite otro.
+                      </p>
+                    </div>
+
                     <!-- Field 1: New Password -->
                     <div class="flex flex-col gap-1.5">
                       <label class="font-label-md text-[13px] text-[#001549] font-semibold flex items-center justify-between" for="newPassword">
@@ -455,6 +484,8 @@ export class Recovery {
   recoveryEmail = signal('');
   sendingLink = signal(false);
   linkSent = signal(false);
+  /** Código de un solo uso que exige el paso 2. Se rellena solo si el canal lo entrega. */
+  recoveryToken = signal('');
 
   // Step 2
   newPassword = signal('');
@@ -498,19 +529,49 @@ export class Recovery {
     return this.newPassword() === this.confirmPassword() && this.newPassword().length > 0;
   });
 
+  /**
+   * HU-006 CA-01. La respuesta es la misma exista o no la cuenta, de modo que esta pantalla no
+   * puede decir si el correo está registrado: hacerlo convertiría el formulario en un medio para
+   * enumerar cuentas. El token llega en la respuesta solo por el canal de laboratorio que admite
+   * RF-03; cuando se active un envío real por correo, el usuario lo pegará en el paso 2.
+   */
   handleSendLink(e: Event) {
     e.preventDefault();
     this.sendingLink.set(true);
     this.recoveryError.set('');
-    this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/recovery/request`, { email: this.recoveryEmail() }).subscribe({
-      next: () => { this.sendingLink.set(false); this.linkSent.set(true); },
-      error: err => { this.sendingLink.set(false); this.recoveryError.set(err.status === 404 ? 'No encontramos una cuenta activa con ese correo.' : 'No fue posible verificar la cuenta. Puede intentar nuevamente.'); }
+    this.http.post<{ message: string; token?: string }>(
+      `${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/recovery/request`,
+      { email: this.recoveryEmail() }
+    ).subscribe({
+      next: response => {
+        this.sendingLink.set(false);
+        this.linkSent.set(true);
+        this.recoveryToken.set(response.token ?? '');
+      },
+      error: () => {
+        this.sendingLink.set(false);
+        this.recoveryError.set('No fue posible procesar la solicitud. Puede intentarlo nuevamente.');
+      }
     });
   }
 
+  /** CA-02 y CA-03. El cambio exige el token: sin él el backend rechaza la petición. */
   handlePasswordReset(e: Event) {
     e.preventDefault();
     if (!this.passwordsMatch() || !this.hasMinLength()) return;
-    this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/password-reset`, { email: this.recoveryEmail(), password: this.newPassword() }).subscribe({ next: () => this.passwordChanged.set(true), error: err => this.recoveryError.set(err.status === 404 ? 'La cuenta no existe o está inactiva.' : 'No fue posible actualizar la contraseña.') });
+    const token = this.recoveryToken().trim();
+    if (!token) {
+      this.recoveryError.set('Falta el código de recuperación. Solicítelo de nuevo en el paso 1.');
+      return;
+    }
+    this.recoveryError.set('');
+    this.http.post(`${this.apiBaseUrl.replace('/api/v1', '')}/api/auth/recovery/confirm`,
+      { token, password: this.newPassword() }
+    ).subscribe({
+      next: () => this.passwordChanged.set(true),
+      error: err => this.recoveryError.set(err.status === 400
+        ? 'El código de recuperación no es válido, ya fue usado o venció. Solicite uno nuevo.'
+        : 'No fue posible actualizar la contraseña.')
+    });
   }
 }

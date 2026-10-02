@@ -1,15 +1,15 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ClinicalDataState } from '../services/clinical-data';
-import { AvailabilityBlock, CatalogApi, LocationItem } from '../services/catalog-api';
+import { AgendaItem, AvailabilityBlock, CatalogApi, LocationItem } from '../services/catalog-api';
 
 /**
- * Portal del profesional. Cubre HU-016 crear bloques, HU-017 modificar o eliminar bloques futuros
- * y HU-018 consultar el calendario propio.
+ * Portal del profesional. Cubre HU-016 crear bloques, HU-017 modificar o eliminar bloques futuros,
+ * HU-018 consultar el calendario propio, HU-025 la agenda de pacientes y HU-026 el cierre de la
+ * atención como atendida o no asistió.
  *
- * La agenda de pacientes no se muestra porque todavía no existe: es HU-025, y el cierre de la
- * atención como atendida o no asistió es HU-026. Antes esta pantalla presentaba ocho pacientes
- * inventados en el componente, sin ninguna llamada al backend.
+ * El profesional nunca se identifica por un parámetro: el backend lo deriva del token, de modo que
+ * no existe forma de pedir la agenda de otro.
  */
 @Component({
   selector: 'app-doctor-portal',
@@ -243,19 +243,104 @@ import { AvailabilityBlock, CatalogApi, LocationItem } from '../services/catalog
             }
           </section>
 
-          <!-- Alcance pendiente, declarado en lugar de simulado -->
-          <section class="bg-white rounded-2xl p-6 shadow-sm border border-[#e7eeff] flex flex-col gap-2">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-[#f0f3ff] text-[#757682] flex items-center justify-center">
-                <span class="material-symbols-outlined text-[22px]">patient_list</span>
+          <!-- HU-025 agenda propia y HU-026 cierre de atención -->
+          <section class="bg-white rounded-2xl p-6 shadow-sm border border-[#e7eeff] flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#0056c3] flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[22px]">patient_list</span>
+                </div>
+                <div class="flex flex-col">
+                  <h2 class="font-label-md text-[15px] text-[#001549] font-bold">Agenda de pacientes</h2>
+                  <span class="font-caption text-[11px] text-[#757682]">
+                    Solo sus propias citas: el backend las deriva del token.
+                  </span>
+                </div>
               </div>
-              <h2 class="font-label-md text-[15px] text-[#001549] font-bold">Agenda de pacientes</h2>
+              <div class="flex flex-wrap items-end gap-2">
+                <div class="flex flex-col gap-1">
+                  <label class="font-caption text-[11px] text-[#757682]" for="agendaFrom">Desde</label>
+                  <input id="agendaFrom" type="date" [value]="agendaFrom()"
+                    (change)="agendaFrom.set($any($event.target).value)"
+                    class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549]" />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="font-caption text-[11px] text-[#757682]" for="agendaTo">Hasta</label>
+                  <input id="agendaTo" type="date" [value]="agendaTo()"
+                    (change)="agendaTo.set($any($event.target).value)"
+                    class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549]" />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="font-caption text-[11px] text-[#757682]" for="agendaLocation">Sede</label>
+                  <select id="agendaLocation" [value]="agendaLocationId() ?? ''"
+                    (change)="agendaLocationId.set($any($event.target).value ? Number($any($event.target).value) : null)"
+                    class="px-2.5 py-1.5 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549]">
+                    <option value="">Todas</option>
+                    @for (site of locations(); track site.id) { <option [value]="site.id">{{ site.name }}</option> }
+                  </select>
+                </div>
+                <button type="button" (click)="loadAgenda()" [disabled]="agendaLoading()"
+                  class="px-3 py-1.5 rounded-lg bg-[#0056c3] text-white text-[12px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                  Consultar
+                </button>
+              </div>
             </div>
-            <p class="font-body-md text-[13px] text-[#444651]">
-              Todavía no está disponible. Consultar las citas asignadas corresponde a HU-025 y
-              marcarlas como atendidas o no asistidas a HU-026; ninguna de las dos está implementada.
-              Esta pantalla no muestra pacientes simulados a propósito.
-            </p>
+
+            @if (agendaError()) {
+              <div class="p-3 rounded-lg bg-[#ffdad6] text-[#ba1a1a] text-[12px]">{{ agendaError() }}</div>
+            }
+            @if (agendaNotice()) {
+              <div class="p-3 rounded-lg bg-[#dee8ff] text-[#001549] text-[12px]">{{ agendaNotice() }}</div>
+            }
+
+            @if (agendaLoading()) {
+              <p class="font-body-md text-[13px] text-[#757682]">Cargando la agenda…</p>
+            } @else if (agenda().length === 0) {
+              <p class="font-body-md text-[13px] text-[#757682]">
+                No hay citas en el rango consultado.
+              </p>
+            } @else {
+              <div class="flex flex-col gap-2">
+                @for (item of agenda(); track item.id) {
+                  <div class="p-4 rounded-xl border border-[#e7eeff] bg-[#fbfcff] flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex flex-col gap-0.5 min-w-[220px]">
+                      <span class="font-label-md text-[13px] text-[#001549] font-semibold">{{ item.patientName }}</span>
+                      <span class="font-caption text-[11px] text-[#757682]">{{ item.patientDocument }}</span>
+                      <span class="font-caption text-[11px] text-[#444651]">
+                        {{ item.startAt | date: 'EEE d MMM, HH:mm' }} · {{ item.durationMinutes }} min
+                      </span>
+                      <span class="font-caption text-[11px] text-[#444651]">
+                        {{ item.specialtyName }} · {{ item.locationName }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="px-2.5 py-1 rounded-md text-[11px] font-semibold"
+                        [class]="item.status === 'APPROVED' ? 'bg-[#dee8ff] text-[#001549]'
+                          : item.status === 'COMPLETED' ? 'bg-[#dcf4e4] text-[#13532f]'
+                          : 'bg-[#ffe2c7] text-[#7a3d00]'">
+                        {{ statusLabel(item.status) }}
+                      </span>
+                      <!-- HU-026: solo una cita APPROVED cuya hora ya pasó es cerrable. Deshabilitar
+                           el botón evita un 409 previsible; el backend lo vuelve a comprobar. -->
+                      @if (item.status === 'APPROVED') {
+                        <button type="button" (click)="close(item.id, 'COMPLETED')"
+                          [disabled]="closingId() === item.id || !hasStarted(item.startAt)"
+                          [title]="hasStarted(item.startAt) ? 'Marcar como atendida' : 'La cita aún no ha comenzado'"
+                          class="px-2.5 py-1 rounded bg-[#13532f] text-white text-[11px] font-semibold hover:bg-[#1a6b3d] disabled:opacity-40 cursor-pointer">
+                          Atendida
+                        </button>
+                        <button type="button" (click)="close(item.id, 'NO_SHOW')"
+                          [disabled]="closingId() === item.id || !hasStarted(item.startAt)"
+                          [title]="hasStarted(item.startAt) ? 'Marcar como no asistió' : 'La cita aún no ha comenzado'"
+                          class="px-2.5 py-1 rounded bg-white text-[#7a3d00] border border-[#e9c89d] text-[11px] font-semibold hover:bg-[#fff6ea] disabled:opacity-40 cursor-pointer">
+                          No asistió
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
           </section>
 
         </main>
@@ -284,7 +369,76 @@ export class DoctorPortal implements OnInit {
   formStart = signal('08:00');
   formEnd = signal('12:00');
 
+  // HU-025 y HU-026
+  agenda = signal<AgendaItem[]>([]);
+  agendaLoading = signal(false);
+  agendaError = signal('');
+  agendaNotice = signal('');
+  agendaFrom = signal(this.isoToday());
+  agendaTo = signal(this.isoPlusDays(7));
+  agendaLocationId = signal<number | null>(null);
+  closingId = signal<number | null>(null);
+
   protected readonly Number = Number;
+
+  private static readonly AGENDA_STATUS_LABELS: Record<string, string> = {
+    APPROVED: 'Confirmada',
+    COMPLETED: 'Atendida',
+    NO_SHOW: 'No asistió',
+    REQUESTED: 'En revisión',
+    CANCELLED: 'Cancelada',
+    REJECTED: 'Rechazada',
+  };
+
+  statusLabel(code: string): string {
+    return DoctorPortal.AGENDA_STATUS_LABELS[code] ?? code;
+  }
+
+  /** HU-026: la atención solo se cierra una vez comenzada. */
+  hasStarted(startAt: string): boolean {
+    return new Date(startAt).getTime() <= Date.now();
+  }
+
+  loadAgenda() {
+    this.agendaLoading.set(true);
+    this.agendaError.set('');
+    this.catalogApi.professionalAgenda({
+      from: this.agendaFrom(),
+      to: this.agendaTo(),
+      locationId: this.agendaLocationId() ?? undefined,
+    }).subscribe({
+      next: response => { this.agenda.set(response.items); this.agendaLoading.set(false); },
+      error: err => {
+        this.agendaLoading.set(false);
+        this.agendaError.set(err.status === 403
+          ? 'Su usuario no tiene una ficha de profesional activa.'
+          : 'No fue posible cargar la agenda.');
+      },
+    });
+  }
+
+  close(id: number, outcome: 'COMPLETED' | 'NO_SHOW') {
+    this.closingId.set(id);
+    this.agendaError.set('');
+    this.agendaNotice.set('');
+    this.catalogApi.closeAttention(id, outcome).subscribe({
+      next: () => {
+        this.closingId.set(null);
+        this.agendaNotice.set(outcome === 'COMPLETED'
+          ? 'La atención quedó registrada como atendida.'
+          : 'La cita quedó registrada como no asistida.');
+        // Se recarga desde el servidor en lugar de mutar la lista: el estado real lo decide el
+        // backend, y así un conflicto no deja la pantalla mostrando algo que no ocurrió.
+        this.loadAgenda();
+      },
+      error: err => {
+        this.closingId.set(null);
+        this.agendaError.set(err.status === 409
+          ? 'La cita no es cerrable: debe estar confirmada y haber comenzado.'
+          : 'No fue posible cerrar la atención.');
+      },
+    });
+  }
 
   ngOnInit() {
     this.catalogApi.locations().subscribe({
@@ -295,6 +449,7 @@ export class DoctorPortal implements OnInit {
       error: () => this.error.set('No fue posible cargar las sedes.'),
     });
     this.load();
+    this.loadAgenda();
   }
 
   /** HU-018: solo el calendario propio. El backend lo deriva del token, no de un id de la URL. */

@@ -2,7 +2,9 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { Appointment, ClinicalDataState } from '../services/clinical-data';
-import { AvailabilityItem, CatalogApi, MyRescheduleRequest } from '../services/catalog-api';
+import {
+  Affiliation, AvailabilityItem, CatalogApi, CatalogItem, EpsPlanOption, MyRescheduleRequest,
+} from '../services/catalog-api';
 
 @Component({
   selector: 'app-patient-portal',
@@ -420,6 +422,10 @@ import { AvailabilityItem, CatalogApi, MyRescheduleRequest } from '../services/c
                       <span class="font-caption text-[12px] text-[#757682]">
                         {{ app.date }} • {{ app.time }} · {{ app.facilityFullName }}
                       </span>
+                      <!-- HU-022 CA-03: el motivo del rechazo administrativo, cuando existe. -->
+                      @if (app.statusCode === 'REJECTED' && app.reason) {
+                        <span class="font-caption text-[12px] text-[#7f1d1d] italic">Motivo: {{ app.reason }}</span>
+                      }
                     </div>
                     <div class="flex items-center gap-2">
                       <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold" [class]="badgeClassFor(app.statusCode)">
@@ -437,6 +443,109 @@ import { AvailabilityItem, CatalogApi, MyRescheduleRequest } from '../services/c
                 }
               </div>
             }
+          </section>
+
+          <!-- HU-007 perfil y HU-008 afiliación -->
+          <section class="bg-white rounded-2xl p-6 shadow-sm border border-[#e7eeff] flex flex-col gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-[#dee8ff] text-[#0056c3] flex items-center justify-center">
+                <span class="material-symbols-outlined text-[22px]">badge</span>
+              </div>
+              <div class="flex flex-col">
+                <h2 class="font-label-md text-[15px] text-[#001549] font-bold">Mis datos y afiliación</h2>
+                <span class="font-caption text-[11px] text-[#757682]">
+                  El documento y el correo identifican la cuenta y no se editan desde aquí.
+                </span>
+              </div>
+            </div>
+
+            @if (profileMessage()) {
+              <div class="p-3 rounded-lg text-[12px]"
+                [class]="profileError() ? 'bg-[#ffdad6] text-[#ba1a1a]' : 'bg-[#dcf4e4] text-[#13532f]'">
+                {{ profileMessage() }}
+              </div>
+            }
+
+            <form class="flex flex-wrap items-end gap-3" (submit)="saveProfile($event)">
+              <div class="flex flex-col gap-1">
+                <label class="font-caption text-[11px] text-[#757682]" for="profNames">Nombres</label>
+                <input id="profNames" [value]="profNames()" (input)="profNames.set($any($event.target).value)"
+                  class="px-3 py-2 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549] w-44" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="font-caption text-[11px] text-[#757682]" for="profSurnames">Apellidos</label>
+                <input id="profSurnames" [value]="profSurnames()" (input)="profSurnames.set($any($event.target).value)"
+                  class="px-3 py-2 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549] w-44" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="font-caption text-[11px] text-[#757682]" for="profPhone">Teléfono</label>
+                <input id="profPhone" [value]="profPhone()" (input)="profPhone.set($any($event.target).value)"
+                  class="px-3 py-2 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549] w-40" />
+              </div>
+              <button type="submit" [disabled]="profileBusy()"
+                class="px-4 py-2 rounded-lg bg-[#0056c3] text-white text-[12px] font-semibold hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer">
+                Guardar datos
+              </button>
+            </form>
+
+            <div class="pt-3 border-t border-[#e7eeff] flex flex-col gap-3">
+              <span class="font-micro text-[11px] uppercase text-[#757682] font-semibold tracking-wider">
+                Afiliación (EPS, plan y régimen)
+              </span>
+
+              @if (affiliation(); as current) {
+                <div class="p-3 rounded-xl bg-[#f8faff] border border-[#e7eeff] flex flex-col gap-0.5">
+                  <span class="font-label-md text-[13px] text-[#001549] font-semibold">{{ current.epsName }}</span>
+                  <span class="font-caption text-[12px] text-[#444651]">
+                    {{ current.planName }} · {{ current.regimeName }} · N.º {{ current.membershipNumber }}
+                  </span>
+                  @if (!current.catalogActive) {
+                    <span class="font-caption text-[11px] text-[#7a3d00]">
+                      Su EPS o su plan fueron desactivados. Registre una afiliación vigente.
+                    </span>
+                  }
+                </div>
+              } @else {
+                <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">
+                  No tiene una afiliación registrada.
+                </p>
+              }
+
+              <form class="flex flex-wrap items-end gap-3" (submit)="saveAffiliation($event)">
+                <div class="flex flex-col gap-1">
+                  <label class="font-caption text-[11px] text-[#757682]" for="affEps">EPS</label>
+                  <select id="affEps" [value]="affEpsId() ?? ''"
+                    (change)="selectEps($any($event.target).value ? Number($any($event.target).value) : null)"
+                    class="px-3 py-2 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549]">
+                    <option value="">Seleccione…</option>
+                    @for (item of epsOptions(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+                  </select>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="font-caption text-[11px] text-[#757682]" for="affPlan">Plan</label>
+                  <!-- Los planes se piden a la EPS elegida: una combinación cruzada la rechaza
+                       el backend por CA-02, y aquí simplemente no se puede construir. -->
+                  <select id="affPlan" [value]="affPlanId() ?? ''"
+                    (change)="affPlanId.set($any($event.target).value ? Number($any($event.target).value) : null)"
+                    [disabled]="planOptions().length === 0"
+                    class="px-3 py-2 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549] disabled:bg-[#f6f6f8]">
+                    <option value="">{{ affEpsId() ? 'Seleccione…' : 'Elija primero la EPS' }}</option>
+                    @for (plan of planOptions(); track plan.id) {
+                      <option [value]="plan.id">{{ plan.name }} · {{ plan.regimeName }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="font-caption text-[11px] text-[#757682]" for="affNumber">N.º de afiliación</label>
+                  <input id="affNumber" [value]="affMembership()" (input)="affMembership.set($any($event.target).value)"
+                    class="px-3 py-2 rounded-lg border border-[#c3c5d4] text-[12px] text-[#001549] w-44" />
+                </div>
+                <button type="submit" [disabled]="profileBusy()"
+                  class="px-4 py-2 rounded-lg bg-[#001549] text-white text-[12px] font-semibold hover:bg-[#002777] disabled:opacity-50 cursor-pointer">
+                  Guardar afiliación
+                </button>
+              </form>
+            </div>
           </section>
 
           <!-- HU-024: modal de reprogramación. Conserva profesional y especialidad por contrato. -->
@@ -916,6 +1025,20 @@ export class PatientPortal implements OnInit {
   showFacilities = signal(false);
 
   selectedAppointment = signal<Appointment | null>(null);
+
+  // HU-007 perfil y HU-008 afiliacion
+  profNames = signal('');
+  profSurnames = signal('');
+  profPhone = signal('');
+  profileBusy = signal(false);
+  profileMessage = signal('');
+  profileError = signal(false);
+  affiliation = signal<Affiliation | null>(null);
+  epsOptions = signal<CatalogItem[]>([]);
+  planOptions = signal<EpsPlanOption[]>([]);
+  affEpsId = signal<number | null>(null);
+  affPlanId = signal<number | null>(null);
+  affMembership = signal('');
   cancellingId = signal<string | null>(null);
   cancelMessage = signal('');
 
@@ -1117,6 +1240,101 @@ export class PatientPortal implements OnInit {
 
   ngOnInit() {
     this.refreshAppointments();
+    this.loadProfileAndAffiliation();
+  }
+
+  // --- HU-007 y HU-008 ---------------------------------------------------------------------
+
+  loadProfileAndAffiliation() {
+    this.catalogApi.me().subscribe({
+      next: profile => {
+        this.profNames.set(profile.names);
+        this.profSurnames.set(profile.surnames);
+        this.profPhone.set(profile.phone);
+      },
+      error: () => this.setProfileMessage('No fue posible cargar su perfil.', true),
+    });
+    this.catalogApi.myAffiliation().subscribe({
+      next: response => {
+        this.affiliation.set(response.affiliation);
+        // Se precargan los selectores con la afiliación vigente, para que cambiar solo el número
+        // no obligue a volver a elegir EPS y plan.
+        if (response.affiliation) {
+          this.affMembership.set(response.affiliation.membershipNumber);
+          this.selectEps(response.affiliation.epsId, response.affiliation.planId);
+        }
+      },
+      error: () => this.affiliation.set(null),
+    });
+    this.catalogApi.epsCatalog().subscribe({
+      next: items => this.epsOptions.set(items),
+      error: () => this.epsOptions.set([]),
+    });
+  }
+
+  selectEps(epsId: number | null, keepPlanId?: number) {
+    this.affEpsId.set(epsId);
+    this.affPlanId.set(keepPlanId ?? null);
+    if (epsId === null) { this.planOptions.set([]); return; }
+    this.catalogApi.epsPlans(epsId).subscribe({
+      next: plans => this.planOptions.set(plans),
+      error: () => this.planOptions.set([]),
+    });
+  }
+
+  saveProfile(event: Event) {
+    event.preventDefault();
+    const names = this.profNames().trim();
+    const surnames = this.profSurnames().trim();
+    const phone = this.profPhone().trim();
+    if (!names && !surnames && !phone) {
+      this.setProfileMessage('No hay cambios que guardar.', true);
+      return;
+    }
+    this.profileBusy.set(true);
+    this.catalogApi.updateProfile({ names, surnames, phone }).subscribe({
+      next: profile => {
+        this.profileBusy.set(false);
+        this.profNames.set(profile.names);
+        this.profSurnames.set(profile.surnames);
+        this.profPhone.set(profile.phone);
+        this.setProfileMessage('Sus datos quedaron actualizados.', false);
+      },
+      error: () => {
+        this.profileBusy.set(false);
+        this.setProfileMessage('No fue posible actualizar sus datos.', true);
+      },
+    });
+  }
+
+  saveAffiliation(event: Event) {
+    event.preventDefault();
+    const planId = this.affPlanId();
+    const membership = this.affMembership().trim();
+    if (planId === null || !membership) {
+      this.setProfileMessage('Elija el plan e indique su número de afiliación.', true);
+      return;
+    }
+    this.profileBusy.set(true);
+    this.catalogApi.saveAffiliation(planId, membership).subscribe({
+      next: () => {
+        this.profileBusy.set(false);
+        this.setProfileMessage('Su afiliación quedó registrada.', false);
+        // Se relee del servidor: la EPS y el régimen los resuelve el backend desde el plan.
+        this.catalogApi.myAffiliation().subscribe({ next: r => this.affiliation.set(r.affiliation) });
+      },
+      error: err => {
+        this.profileBusy.set(false);
+        this.setProfileMessage(err.status === 400
+          ? 'El plan no está activo o no corresponde a la EPS elegida.'
+          : 'No fue posible registrar su afiliación.', true);
+      },
+    });
+  }
+
+  private setProfileMessage(message: string, isError: boolean) {
+    this.profileMessage.set(message);
+    this.profileError.set(isError);
   }
 
   refreshAppointments() {

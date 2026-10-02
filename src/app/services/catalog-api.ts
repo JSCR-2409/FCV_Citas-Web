@@ -60,6 +60,8 @@ export interface MyAppointment {
   professionalId: number;
   specialtyId: number;
   durationMinutes: number;
+  /** HU-022 CA-03: motivo del rechazo administrativo; null cuando no aplica. */
+  reason: string | null;
 }
 
 /** Solicitud de reprogramación vista por el paciente. */
@@ -163,6 +165,96 @@ export interface AvailabilityBlockInput {
   endTime: string;
 }
 
+/** HU-007. Los únicos campos editables por su titular; el backend ignora cualquier otro. */
+export interface ProfileUpdate {
+  names?: string;
+  surnames?: string;
+  phone?: string;
+}
+
+/**
+ * HU-008. La afiliación relaciona EPS, plan y régimen sin copiar sus nombres: el backend los
+ * resuelve por JOIN, de modo que renombrar una EPS se refleja aquí sin migrar nada.
+ */
+export interface Affiliation {
+  id: number;
+  membershipNumber: string;
+  planId: number;
+  planName: string;
+  epsId: number;
+  epsName: string;
+  regimeId: number;
+  regimeName: string;
+  /** false cuando la EPS o el plan fueron desactivados: la UI debe pedir que se actualice. */
+  catalogActive: boolean;
+}
+
+export interface EpsPlanOption {
+  id: number;
+  code: string;
+  name: string;
+  regimeId: number;
+  regimeName: string;
+}
+
+export interface AdminEps {
+  id: number;
+  code: string;
+  name: string;
+  active: boolean;
+  planCount: number;
+}
+
+export interface AdminEpsPlan {
+  id: number;
+  epsId: number;
+  epsName: string;
+  regimeId: number;
+  regimeName: string;
+  code: string;
+  name: string;
+  active: boolean;
+}
+
+/** HU-025. Cita de la agenda propia del profesional. */
+export interface AgendaItem {
+  id: number;
+  startAt: string;
+  endAt: string;
+  status: string;
+  patientName: string;
+  /** Documento y no datos de contacto: identifica al paciente sin exponer su directorio. */
+  patientDocument: string;
+  specialtyName: string;
+  durationMinutes: number;
+  locationId: number;
+  locationName: string;
+}
+
+export interface AgendaResponse {
+  from: string;
+  to: string;
+  items: AgendaItem[];
+  count: number;
+}
+
+/** HU-031. Una transición auditada; actorId y actorName son null cuando la fuente es SYSTEM. */
+export interface HistoryEntry {
+  id: number;
+  appointmentId: number;
+  statusCode: string;
+  changeSource: 'SYSTEM' | 'USER' | 'ADMIN';
+  reason: string | null;
+  changedAt: string;
+  actorId: number | null;
+  actorName: string | null;
+}
+
+export interface HistoryResponse {
+  items: HistoryEntry[];
+  count: number;
+}
+
 export interface SpecializedRequestFilters {
   locationId?: number;
   professionalId?: number;
@@ -205,7 +297,15 @@ export class CatalogApi {
   createGeneralAppointment(slotId: number, specialtyId: number): Observable<unknown> { return this.http.post(`${this.baseUrl}/appointments/general`, { slotId, specialtyId }); }
   requestSpecializedAppointment(slotId: number, specialtyId: number): Observable<unknown> { return this.http.post(`${this.baseUrl}/appointments/specialized`, { slotId, specialtyId }); }
   me(): Observable<MeProfile> { return this.http.get<MeProfile>(`${this.baseUrl}/me`); }
-  myAppointments(): Observable<MyAppointment[]> { return this.http.get<MyAppointment[]>(`${this.baseUrl}/me/appointments`); }
+  /** HU-022. Los filtros se aplican en el servidor: la proyección devuelve solo lo que corresponde. */
+  myAppointments(filters: { status?: string; from?: string; to?: string } = {}): Observable<MyAppointment[]> {
+    const query = new URLSearchParams();
+    if (filters.status) query.set("status", filters.status);
+    if (filters.from) query.set("from", filters.from);
+    if (filters.to) query.set("to", filters.to);
+    const suffix = query.size ? `?${query}` : "";
+    return this.http.get<MyAppointment[]>(`${this.baseUrl}/me/appointments${suffix}`);
+  }
   specializedRequests(filters: SpecializedRequestFilters = {}): Observable<SpecializedRequest[]> {
     const query = new URLSearchParams();
     if (filters.locationId) query.set('locationId', String(filters.locationId));
@@ -300,5 +400,82 @@ export class CatalogApi {
 
   decideReschedule(id: number, status: 'APPROVED' | 'REJECTED', reason?: string): Observable<DecisionResult> {
     return this.http.patch<DecisionResult>(`${this.baseUrl}/admin/reschedule-requests/${id}`, { status, reason });
+  }
+
+  // --- Perfil y afiliación: HU-007 y HU-008 ---
+
+  updateProfile(changes: ProfileUpdate): Observable<MeProfile> {
+    return this.http.patch<MeProfile>(`${this.baseUrl}/me`, changes);
+  }
+
+  myAffiliation(): Observable<{ affiliation: Affiliation | null }> {
+    return this.http.get<{ affiliation: Affiliation | null }>(`${this.baseUrl}/me/insurance-affiliation`);
+  }
+
+  saveAffiliation(planId: number, membershipNumber: string): Observable<unknown> {
+    return this.http.put(`${this.baseUrl}/me/insurance-affiliation`, { planId, membershipNumber });
+  }
+
+  epsCatalog(): Observable<CatalogItem[]> {
+    return this.http.get<CatalogItem[]>(`${this.baseUrl}/catalogs/eps`);
+  }
+
+  epsPlans(epsId: number): Observable<EpsPlanOption[]> {
+    return this.http.get<EpsPlanOption[]>(`${this.baseUrl}/catalogs/eps/${epsId}/plans`);
+  }
+
+  // --- Agenda y cierre de atención: HU-025 y HU-026 ---
+
+  professionalAgenda(params: { from?: string; to?: string; locationId?: number; status?: string } = {}): Observable<AgendaResponse> {
+    const query = new URLSearchParams();
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    if (params.locationId) query.set('locationId', String(params.locationId));
+    if (params.status) query.set('status', params.status);
+    const suffix = query.size ? `?${query}` : '';
+    return this.http.get<AgendaResponse>(`${this.baseUrl}/professional/appointments${suffix}`);
+  }
+
+  closeAttention(id: number, outcome: 'COMPLETED' | 'NO_SHOW', notes?: string): Observable<unknown> {
+    return this.http.patch(`${this.baseUrl}/professional/appointments/${id}/attention`, { outcome, notes });
+  }
+
+  // --- EPS y planes como catálogo administrable: HU-010 y HU-011 ---
+
+  adminEps(): Observable<AdminEps[]> {
+    return this.http.get<AdminEps[]>(`${this.baseUrl}/admin/eps`);
+  }
+
+  createEps(code: string, name: string): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/admin/eps`, { code, name });
+  }
+
+  updateEps(id: number, changes: { name?: string; active?: boolean }): Observable<unknown> {
+    return this.http.patch(`${this.baseUrl}/admin/eps/${id}`, changes);
+  }
+
+  adminEpsPlans(epsId?: number): Observable<AdminEpsPlan[]> {
+    const suffix = epsId ? `?epsId=${epsId}` : '';
+    return this.http.get<AdminEpsPlan[]>(`${this.baseUrl}/admin/eps-plans${suffix}`);
+  }
+
+  createEpsPlan(plan: { epsId: number; regimeId: number; code: string; name: string }): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/admin/eps-plans`, plan);
+  }
+
+  updateEpsPlan(id: number, changes: { name?: string; regimeId?: number; active?: boolean }): Observable<unknown> {
+    return this.http.patch(`${this.baseUrl}/admin/eps-plans/${id}`, changes);
+  }
+
+  // --- Auditoría de estados: HU-031 ---
+
+  appointmentHistory(params: { appointmentId?: number; from?: string; to?: string; limit?: number } = {}): Observable<HistoryResponse> {
+    const query = new URLSearchParams();
+    if (params.appointmentId) query.set('appointmentId', String(params.appointmentId));
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.size ? `?${query}` : '';
+    return this.http.get<HistoryResponse>(`${this.baseUrl}/admin/appointment-history${suffix}`);
   }
 }

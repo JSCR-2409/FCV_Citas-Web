@@ -51,6 +51,8 @@ export interface Appointment {
   professionalId: number;
   specialtyId: number;
   durationMinutes: number;
+  /** HU-022 CA-03: motivo del rechazo administrativo cuando existe. */
+  reason: string | null;
   type: 'Presencial' | 'Teleconsulta';
   status: 'Confirmada' | 'En Espera' | 'Atendida' | 'Cancelada' | 'Rechazada' | 'No asistió';
   preparationNote?: string;
@@ -101,6 +103,7 @@ export class ClinicalDataState {
         professionalId: item.professionalId,
         specialtyId: item.specialtyId,
         durationMinutes: item.durationMinutes,
+        reason: item.reason,
         type: 'Presencial',
         status: STATUS_LABELS[item.status] ?? item.status,
       } as Appointment;
