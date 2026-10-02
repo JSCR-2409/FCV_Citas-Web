@@ -16,6 +16,61 @@ export interface LocationItem extends CatalogItem {
 export interface AvailabilityItem { slotId: number; startAt: string; endAt: string; professionalId: number; professionalCode: string; locationId: number; locationName: string; specialtyName: string; }
 export interface AvailabilityResponse { date: string; durationMinutes: number; items: AvailabilityItem[]; }
 
+/** Solicitud especializada pendiente, tal como la entrega GET /admin/specialized-requests. */
+export interface SpecializedRequest {
+  id: number;
+  patientUserId: number;
+  patientName: string;
+  professionalId: number;
+  professionalCode: string;
+  locationId: number;
+  locationName: string;
+  specialtyId: number;
+  specialtyName: string;
+  durationMinutes: number;
+  startAt: string;
+  endAt: string;
+  status: string;
+}
+
+/** Perfil propio que entrega GET /me. */
+export interface MeProfile {
+  id: number;
+  names: string;
+  surnames: string;
+  documentType: string;
+  documentNumber: string;
+  email: string;
+  phone: string;
+  active?: boolean;
+  role?: string;
+}
+
+/** Cita del paciente tal como la entrega GET /me/appointments. */
+export interface MyAppointment {
+  id: number;
+  startAt: string;
+  endAt: string;
+  status: string;
+  specialty: string;
+  doctorName: string;
+  facility: string;
+  facilityFullName: string;
+}
+
+export interface DecisionResult {
+  id: number;
+  status: 'APPROVED' | 'REJECTED';
+  reason: string;
+}
+
+export interface SpecializedRequestFilters {
+  locationId?: number;
+  professionalId?: number;
+  specialtyId?: number;
+  date?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CatalogApi {
   private readonly http = inject(HttpClient);
@@ -50,9 +105,17 @@ export class CatalogApi {
   }
   createGeneralAppointment(slotId: number, specialtyId: number): Observable<unknown> { return this.http.post(`${this.baseUrl}/appointments/general`, { slotId, specialtyId }); }
   requestSpecializedAppointment(slotId: number, specialtyId: number): Observable<unknown> { return this.http.post(`${this.baseUrl}/appointments/specialized`, { slotId, specialtyId }); }
-  me(): Observable<{id:number; names:string; surnames:string; documentType:string; documentNumber:string; email:string; phone:string}> { return this.http.get<any>(`${this.baseUrl}/me`); }
-  myAppointments(): Observable<any[]> { return this.http.get<any[]>(`${this.baseUrl}/me/appointments`); }
-  specializedRequests(): Observable<any[]> { return this.http.get<any[]>(`${this.baseUrl}/admin/specialized-requests`); }
-  decideSpecializedRequest(id: number, status: 'APPROVED'|'REJECTED', reason?: string): Observable<any> { return this.http.patch(`${this.baseUrl}/admin/specialized-requests/${id}`, { status, reason }); }
+  me(): Observable<MeProfile> { return this.http.get<MeProfile>(`${this.baseUrl}/me`); }
+  myAppointments(): Observable<MyAppointment[]> { return this.http.get<MyAppointment[]>(`${this.baseUrl}/me/appointments`); }
+  specializedRequests(filters: SpecializedRequestFilters = {}): Observable<SpecializedRequest[]> {
+    const query = new URLSearchParams();
+    if (filters.locationId) query.set('locationId', String(filters.locationId));
+    if (filters.professionalId) query.set('professionalId', String(filters.professionalId));
+    if (filters.specialtyId) query.set('specialtyId', String(filters.specialtyId));
+    if (filters.date) query.set('date', filters.date);
+    const suffix = query.size ? `?${query}` : '';
+    return this.http.get<SpecializedRequest[]>(`${this.baseUrl}/admin/specialized-requests${suffix}`);
+  }
+  decideSpecializedRequest(id: number, status: 'APPROVED'|'REJECTED', reason?: string): Observable<DecisionResult> { return this.http.patch<DecisionResult>(`${this.baseUrl}/admin/specialized-requests/${id}`, { status, reason }); }
   cancelAppointment(id: number): Observable<void> { return this.http.patch<void>(`${this.baseUrl}/me/appointments/${id}/cancel`, {}); }
 }

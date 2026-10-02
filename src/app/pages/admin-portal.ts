@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ClinicalDataState } from '../services/clinical-data';
-import { CatalogApi } from '../services/catalog-api';
+import { CatalogApi, SpecializedRequest } from '../services/catalog-api';
 
 export interface AdminModule {
   id: string;
@@ -244,21 +244,106 @@ export interface AdminModule {
               </span>
             </div>
 
-            <div class="flex flex-col gap-2">
-              <span class="font-label-md text-[13px] text-[#001549] font-bold">Registros del Módulo:</span>
-              @for (item of mod.details; track item) {
-                <div class="p-3 rounded-xl bg-[#f0f3ff] flex items-center justify-between text-[12px] border border-[#e7eeff]">
-                  <span class="text-[#111c2c] font-medium">{{ item }}</span>
-                  <button
-                    (click)="approveItem()"
-                    class="px-2.5 py-1 rounded bg-[#0056c3] text-white font-semibold text-[11px] hover:bg-[#006ef4] cursor-pointer"
-                    type="button"
-                  >
-                    Auditar / Gestionar
-                  </button>
-                </div>
-              }
-            </div>
+            @if (mod.id === 'solicitudes') {
+              <div class="flex flex-col gap-2">
+                <span class="font-label-md text-[13px] text-[#001549] font-bold">Solicitudes pendientes de decisión:</span>
+
+                @if (decisionNotice()) {
+                  <p class="p-3 rounded-xl bg-[#e6f6ec] text-[#14532d] text-[12px] border border-[#bbe5c8]" role="status">
+                    {{ decisionNotice() }}
+                  </p>
+                }
+                @if (decisionError()) {
+                  <p class="p-3 rounded-xl bg-[#fdecec] text-[#7f1d1d] text-[12px] border border-[#f5c2c2]" role="alert">
+                    {{ decisionError() }}
+                  </p>
+                }
+
+                @if (loadingRequests()) {
+                  <p class="p-3 text-[12px] text-[#444651]">Cargando solicitudes…</p>
+                } @else if (specializedRequests().length === 0) {
+                  <p class="p-3 rounded-xl bg-[#f0f3ff] text-[12px] text-[#444651] border border-[#e7eeff]">
+                    No hay solicitudes especializadas pendientes.
+                  </p>
+                } @else {
+                  @for (req of specializedRequests(); track req.id) {
+                    <div class="p-3 rounded-xl bg-[#f0f3ff] flex flex-col gap-2 text-[12px] border border-[#e7eeff]">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex flex-col">
+                          <span class="text-[#111c2c] font-bold">#{{ req.id }} · {{ req.patientName }}</span>
+                          <span class="text-[#444651]">
+                            {{ req.specialtyName }} · {{ req.durationMinutes }} min · {{ req.locationName }}
+                          </span>
+                          <span class="text-[#444651]">
+                            {{ req.startAt }} — profesional {{ req.professionalCode }}
+                          </span>
+                        </div>
+                        <div class="flex gap-2">
+                          <button
+                            type="button"
+                            [disabled]="busyId() === req.id"
+                            (click)="approve(req.id)"
+                            class="px-2.5 py-1 rounded bg-[#0056c3] text-white font-semibold text-[11px] hover:bg-[#006ef4] disabled:opacity-50 cursor-pointer"
+                          >
+                            Aprobar
+                          </button>
+                          <button
+                            type="button"
+                            [disabled]="busyId() === req.id"
+                            (click)="startReject(req.id)"
+                            class="px-2.5 py-1 rounded bg-white text-[#7f1d1d] border border-[#f5c2c2] font-semibold text-[11px] hover:bg-[#fdecec] disabled:opacity-50 cursor-pointer"
+                          >
+                            Rechazar
+                          </button>
+                        </div>
+                      </div>
+
+                      @if (rejectingId() === req.id) {
+                        <div class="flex flex-col gap-2 pt-2 border-t border-[#e7eeff]">
+                          <label class="text-[11px] font-bold text-[#001549]" [attr.for]="'motivo-' + req.id">
+                            Motivo del rechazo (obligatorio)
+                          </label>
+                          <input
+                            [id]="'motivo-' + req.id"
+                            type="text"
+                            [value]="rejectReason()"
+                            (input)="rejectReason.set($any($event.target).value)"
+                            class="px-3 py-2 rounded-lg border border-[#e7eeff] text-[12px]"
+                            placeholder="Indique por qué se rechaza la solicitud"
+                          />
+                          <div class="flex gap-2 justify-end">
+                            <button
+                              type="button"
+                              (click)="cancelReject()"
+                              class="px-3 py-1.5 rounded bg-white text-[#111c2c] border border-[#e7eeff] text-[11px] font-semibold cursor-pointer"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              [disabled]="rejectReason().trim().length === 0 || busyId() === req.id"
+                              (click)="confirmReject(req.id)"
+                              class="px-3 py-1.5 rounded bg-[#b91c1c] text-white text-[11px] font-semibold hover:bg-[#dc2626] disabled:opacity-50 cursor-pointer"
+                            >
+                              Confirmar rechazo
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
+              </div>
+            } @else {
+              <div class="flex flex-col gap-2">
+                <span class="font-label-md text-[13px] text-[#001549] font-bold">Registros del Módulo:</span>
+                @for (item of mod.details; track item) {
+                  <div class="p-3 rounded-xl bg-[#f0f3ff] flex items-center justify-between text-[12px] border border-[#e7eeff]">
+                    <span class="text-[#111c2c] font-medium">{{ item }}</span>
+                  </div>
+                }
+              </div>
+            }
 
             <div class="flex justify-end gap-3 pt-3 border-t border-[#e7eeff]">
               <button
@@ -278,7 +363,13 @@ export interface AdminModule {
 export class AdminPortal implements OnInit, OnDestroy {
   clinicalState = inject(ClinicalDataState);
   private catalogApi = inject(CatalogApi);
-  specializedRequests = signal<any[]>([]);
+  specializedRequests = signal<SpecializedRequest[]>([]);
+  loadingRequests = signal(false);
+  busyId = signal<number | null>(null);
+  rejectingId = signal<number | null>(null);
+  rejectReason = signal('');
+  decisionNotice = signal<string | null>(null);
+  decisionError = signal<string | null>(null);
 
   remainingSeconds = signal(14 * 60 + 59);
   private timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -365,7 +456,7 @@ export class AdminPortal implements OnInit, OnDestroy {
   ];
 
   ngOnInit() {
-    this.catalogApi.specializedRequests().subscribe({ next: requests => { this.specializedRequests.set(requests); const module = this.modules.find(item => item.id === 'solicitudes'); if (module) { module.badge = `${requests.length} Pendientes`; module.details = requests.map(item => `Solicitud #${item.id} • Especialidad ${item.specialtyId} • ${item.startAt}`); } }, error: () => this.specializedRequests.set([]) });
+    this.loadRequests();
     this.timerInterval = setInterval(() => {
       this.remainingSeconds.update((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
@@ -390,8 +481,74 @@ export class AdminPortal implements OnInit, OnDestroy {
     this.selectedModule.set(mod);
   }
 
-  approveItem() {
-    // Action handled
+  /** HU-027: la bandeja muestra solo las solicitudes REQUESTED que entrega el backend. */
+  loadRequests() {
+    this.loadingRequests.set(true);
+    this.catalogApi.specializedRequests().subscribe({
+      next: requests => {
+        this.specializedRequests.set(requests);
+        this.loadingRequests.set(false);
+        const module = this.modules.find(item => item.id === 'solicitudes');
+        if (module) module.badge = `${requests.length} Pendientes`;
+      },
+      error: () => {
+        this.specializedRequests.set([]);
+        this.loadingRequests.set(false);
+        this.decisionError.set('No fue posible cargar las solicitudes pendientes.');
+      },
+    });
+  }
+
+  /** HU-028 CA-01: aprobar conserva la franja retenida. */
+  approve(id: number) {
+    this.decide(id, 'APPROVED', undefined, `Solicitud #${id} aprobada.`);
+  }
+
+  startReject(id: number) {
+    this.rejectingId.set(id);
+    this.rejectReason.set('');
+    this.decisionError.set(null);
+    this.decisionNotice.set(null);
+  }
+
+  cancelReject() {
+    this.rejectingId.set(null);
+    this.rejectReason.set('');
+  }
+
+  /** HU-028 CA-02: el rechazo exige motivo y libera la franja. */
+  confirmReject(id: number) {
+    const reason = this.rejectReason().trim();
+    if (!reason) {
+      this.decisionError.set('El motivo del rechazo es obligatorio.');
+      return;
+    }
+    this.decide(id, 'REJECTED', reason, `Solicitud #${id} rechazada.`);
+  }
+
+  private decide(id: number, status: 'APPROVED' | 'REJECTED', reason: string | undefined, notice: string) {
+    this.busyId.set(id);
+    this.decisionError.set(null);
+    this.decisionNotice.set(null);
+    this.catalogApi.decideSpecializedRequest(id, status, reason).subscribe({
+      next: () => {
+        this.busyId.set(null);
+        this.rejectingId.set(null);
+        this.rejectReason.set('');
+        this.decisionNotice.set(notice);
+        this.loadRequests();
+      },
+      error: (err: unknown) => {
+        this.busyId.set(null);
+        const response = err as { status?: number; error?: { message?: string } };
+        this.decisionError.set(
+          response.status === 409
+            ? 'La solicitud ya fue resuelta por otra persona. Se recargó la bandeja.'
+            : response.error?.message ?? 'No fue posible registrar la decisión.',
+        );
+        this.loadRequests();
+      },
+    });
   }
 }
 

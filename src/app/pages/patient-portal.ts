@@ -738,5 +738,5 @@ export class PatientPortal {
     this.catalogApi.cancelAppointment(Number(id)).subscribe({ next: () => { this.refreshAppointments(); this.showDetailModal.set(false); }, error: () => this.bookingMessage.set('No fue posible cancelar la cita.') });
   }
 
-  refreshAppointments() { this.catalogApi.myAppointments().subscribe({ next: items => { const current = this.clinicalState.currentUser(); if (current) this.clinicalState.hydrateFromApi({ ...current, role: current.role === 'paciente' ? 'USER' : current.role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, items); } }); }
+  refreshAppointments() { this.catalogApi.myAppointments().subscribe({ next: items => this.clinicalState.setAppointmentsFromApi(items) }); }
 }

@@ -6,6 +6,7 @@
     "start": "ng serve --port=4200 --host=0.0.0.0 --allowed-hosts=true",
     "dev": "cross-env ng serve --port=3000 --host=0.0.0.0 --allowed-hosts=true ${DISABLE_HMR:+--live-reload=false}",
     "build": "ng build",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "lint": "ng lint",

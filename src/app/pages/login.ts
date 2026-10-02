@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { ClinicalDataState, UserRole } from '../services/clinical-data';
 import { API_BASE_URL } from '../services/api-base-url';
 import { CatalogApi } from '../services/catalog-api';
+import { ACCESS_TOKEN_KEY, portalFor, roleFromAccessToken } from '../services/jwt-role';
 
 export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
 
@@ -283,38 +284,6 @@ export type UXState = 'normal' | 'loading' | 'invalid' | 'expired';
             </button>
           </form>
 
-          <!-- Role quick access is intentionally unavailable: roles come from the API token. -->
-          <!--div class="flex flex-col gap-1.5 pt-1">
-            <span class="font-micro text-[11px] text-[#757682] uppercase tracking-wider text-center font-semibold">
-              Acceso Rápido de Prueba por Rol
-            </span>
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                class="px-2 py-2.5 rounded-xl bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#001549] font-caption text-[12px] font-semibold transition-all text-center flex flex-col items-center gap-1 shadow-sm border border-[#e7eeff] cursor-pointer"
-                (click)="selectRoleDemo('paciente')"
-                type="button"
-              >
-                <span class="material-symbols-outlined text-[18px] text-[#0056c3]">person</span>
-                <span>Paciente</span>
-              </button>
-              <button
-                class="px-2 py-2.5 rounded-xl bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#001549] font-caption text-[12px] font-semibold transition-all text-center flex flex-col items-center gap-1 shadow-sm border border-[#e7eeff] cursor-pointer"
-                (click)="selectRoleDemo('medico')"
-                type="button"
-              >
-                <span class="material-symbols-outlined text-[18px] text-[#0056c3]">stethoscope</span>
-                <span>Profesional</span>
-              </button>
-              <button
-                class="px-2 py-2.5 rounded-xl bg-[#f0f3ff] hover:bg-[#dee8ff] text-[#001549] font-caption text-[12px] font-semibold transition-all text-center flex flex-col items-center gap-1 shadow-sm border border-[#e7eeff] cursor-pointer"
-                (click)="selectRoleDemo('admin')"
-                type="button"
-              >
-                <span class="material-symbols-outlined text-[18px] text-[#0056c3]">admin_panel_settings</span>
-                <span>Administrador</span>
-              </button>
-            </div>
-          </div-->
 
           <!-- Secondary Clinical Registration Prompt -->
           <div class="mt-1 p-3.5 rounded-xl bg-[#f0f3ff] flex flex-col items-center text-center gap-1 shadow-sm border border-[#e7eeff]">
@@ -382,21 +351,6 @@ export class Login {
     this.uxState.set(st);
   }
 
-  selectRoleDemo(role: UserRole) {
-    this.selectedRole.set(role);
-    if (role === 'paciente') {
-      this.emailValue.set('paciente@hic.org.co');
-      this.passwordValue.set('HospitalSeguro2024!');
-    } else if (role === 'medico') {
-      this.emailValue.set('dr.especialista@icv.org.co');
-      this.passwordValue.set('ClinicaCardio2024!');
-    } else if (role === 'admin') {
-      this.emailValue.set('coordinacion.citas@hic.org.co');
-      this.passwordValue.set('MasterHIC2024#');
-    }
-    this.uxState.set('normal');
-  }
-
   handleLoginSubmit(event: Event) {
     event.preventDefault();
     this.uxState.set('loading');
@@ -404,22 +358,15 @@ export class Login {
       email: this.emailValue(), password: this.passwordValue(),
     }).subscribe({
       next: ({ accessToken }) => {
-        if (typeof localStorage !== 'undefined') localStorage.setItem('fcv_access_token', accessToken);
-        const role = this.roleFromAccessToken(accessToken);
+        if (typeof localStorage !== 'undefined') localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+        const role = roleFromAccessToken(accessToken);
         if (!role) { this.uxState.set('invalid'); return; }
         this.catalogApi.me().subscribe({
-          next: profile => this.catalogApi.myAppointments().subscribe({ next: appointments => { this.clinicalState.hydrateFromApi({ ...profile, role: role === 'paciente' ? 'USER' : role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, appointments); this.router.navigate([role === 'paciente' ? '/portal/paciente' : role === 'medico' ? '/portal/medico' : '/portal/admin']); }, error: () => this.clinicalState.hydrateFromApi({ ...profile, role: role === 'paciente' ? 'USER' : role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, []) }),
+          next: profile => this.catalogApi.myAppointments().subscribe({ next: appointments => { this.clinicalState.hydrateFromApi({ ...profile, role: role === 'paciente' ? 'USER' : role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, appointments); this.router.navigate([portalFor(role)]); }, error: () => this.clinicalState.hydrateFromApi({ ...profile, role: role === 'paciente' ? 'USER' : role === 'medico' ? 'PROFESSIONAL' : 'ADMIN' }, []) }),
           error: () => this.uxState.set('invalid')
         });
       },
       error: () => this.uxState.set('invalid'),
     });
-  }
-
-  private roleFromAccessToken(token: string): UserRole | null {
-    try {
-      const claim = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role;
-      return claim === 'USER' ? 'paciente' : claim === 'PROFESSIONAL' ? 'medico' : claim === 'ADMIN' ? 'admin' : null;
-    } catch { return null; }
   }
 }
