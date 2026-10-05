@@ -13,6 +13,18 @@ export interface LocationItem extends CatalogItem {
   address: string;
 }
 
+/**
+ * Especialidad activa tal como la ofrece `GET /catalogs/specialties`. `general` es la que decide
+ * el endpoint de reserva: una general se auto-aprueba (HU-020) y una especializada nace en
+ * `REQUESTED` (HU-021).
+ */
+export interface SpecialtyOption extends CatalogItem {
+  durationMinutes: number;
+  general: boolean;
+  requiresAdminApproval: boolean;
+  active: boolean;
+}
+
 export interface AvailabilityItem { slotId: number; startAt: string; endAt: string; professionalId: number; professionalCode: string; locationId: number; locationName: string; specialtyName: string; }
 export interface AvailabilityResponse { date: string; durationMinutes: number; items: AvailabilityItem[]; }
 
@@ -287,7 +299,12 @@ export class CatalogApi {
     return this.http.get<LocationItem[]>(`${this.baseUrl}/catalogs/locations`);
   }
 
-  specialties(): Observable<CatalogItem[]> { return this.http.get<CatalogItem[]>(`${this.baseUrl}/catalogs/specialties`); }
+  /**
+   * HU-019. Devuelve la especialidad completa, no solo su nombre: `general` decide si la reserva
+   * se auto-aprueba o nace como solicitud, y deducirlo del nombre o del id sería inventar la regla
+   * en el cliente.
+   */
+  specialties(): Observable<SpecialtyOption[]> { return this.http.get<SpecialtyOption[]>(`${this.baseUrl}/catalogs/specialties`); }
   availability(params: { date: string; specialtyId: number; locationId?: number; professionalId?: number }): Observable<AvailabilityResponse> {
     const query = new URLSearchParams({ date: params.date, specialtyId: String(params.specialtyId) });
     if (params.locationId) query.set('locationId', String(params.locationId));

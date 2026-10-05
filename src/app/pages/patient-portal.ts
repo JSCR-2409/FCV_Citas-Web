@@ -3,7 +3,8 @@ import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { Appointment, ClinicalDataState } from '../services/clinical-data';
 import {
-  Affiliation, AvailabilityItem, CatalogApi, CatalogItem, EpsPlanOption, MyRescheduleRequest,
+  Affiliation, AvailabilityItem, CatalogApi, CatalogItem, EpsPlanOption, LocationItem,
+  MyRescheduleRequest, SpecialtyOption,
 } from '../services/catalog-api';
 
 @Component({
@@ -691,20 +692,27 @@ import {
               <select
                 id="book-specialty"
                 class="w-full h-11 px-3.5 bg-[#f0f3ff] text-[#111c2c] rounded-lg border border-[#c5c6d3]/60 font-body-md text-[14px] outline-none cursor-pointer"
-                [value]="bookSpecialty()"
-                (change)="bookSpecialty.set($any($event.target).value)"
+                [value]="bookSpecialtyId() ?? ''"
+                (change)="bookSpecialtyId.set($any($event.target).value ? Number($any($event.target).value) : null)"
                 required
               >
-                <option value="Medicina General">Medicina General</option>
-                <option value="Medicina General">Medicina General</option>
-                <option value="Nefrología">Nefrología</option>
-                <option value="Urología">Urología</option>
-                <option value="Gastroenterología">Gastroenterología</option>
-                <option value="Neumología Adulto">Neumología Adulto</option>
-                <option value="Ortopedia y Traumatología">Ortopedia y Traumatología</option>
-                <option value="Endocrinología">Endocrinología</option>
-                <option value="Neurología">Neurología</option>
+                <!-- Poblado desde /catalogs/specialties: una especialidad que el ADMIN cree debe
+                     poder reservarse sin tocar este archivo. -->
+                @if (specialties().length === 0) {
+                  <option value="">Cargando especialidades…</option>
+                }
+                @for (option of specialties(); track option.id) {
+                  <option [value]="option.id">
+                    {{ option.name }}{{ option.general ? '' : ' (requiere aprobación)' }}
+                  </option>
+                }
               </select>
+              @if (selectedSpecialty(); as chosen) {
+                <span class="font-caption text-[11px] text-[#757682]">
+                  {{ chosen.durationMinutes }} minutos ·
+                  {{ chosen.general ? 'se confirma de inmediato' : 'queda en revisión administrativa' }}
+                </span>
+              }
             </div>
 
             <!-- Facility -->
@@ -1053,7 +1061,11 @@ export class PatientPortal implements OnInit {
   protected readonly Number = Number;
 
   // Booking fields
-  bookSpecialty = signal('Medicina General');
+  // Catálogo real: el selector se puebla desde /catalogs/specialties en ngOnInit, de modo que una
+  // especialidad nueva creada por el ADMIN aparece sin tocar este archivo.
+  specialties = signal<SpecialtyOption[]>([]);
+  locations = signal<LocationItem[]>([]);
+  bookSpecialtyId = signal<number | null>(null);
   bookFacility = signal<'HIC' | 'ICV'>('HIC');
   bookDoctor = signal('Dr. Carlos E. Santos');
   bookDate = signal(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
@@ -1190,30 +1202,48 @@ export class PatientPortal implements OnInit {
     }
   }
 
+  /** La especialidad elegida, con su duración y su flag `general`. */
+  selectedSpecialty(): SpecialtyOption | null {
+    const id = this.bookSpecialtyId();
+    return id === null ? null : this.specialties().find(option => option.id === id) ?? null;
+  }
+
   handleBookAppointment(e: Event) {
     e.preventDefault();
     const slot = this.selectedSlot();
     if (!slot) { this.bookingMessage.set('Consulta y selecciona un horario disponible.'); return; }
-    const specialtyId = this.specialtyId();
-    const request = specialtyId === 1
-      ? this.catalogApi.createGeneralAppointment(slot.slotId, specialtyId)
-      : this.catalogApi.requestSpecializedAppointment(slot.slotId, specialtyId);
+    const chosen = this.selectedSpecialty();
+    if (!chosen) { this.bookingMessage.set('Elige una especialidad.'); return; }
+    // El endpoint lo decide el flag `general` del catálogo, no el identificador. Antes la condición
+    // era `specialtyId === 1`, de modo que cualquier especialidad general distinta de la primera se
+    // enviaba al endpoint de especializadas y el backend la rechazaba.
+    const request = chosen.general
+      ? this.catalogApi.createGeneralAppointment(slot.slotId, chosen.id)
+      : this.catalogApi.requestSpecializedAppointment(slot.slotId, chosen.id);
     request.subscribe({
-      next: () => { this.bookingMessage.set('Cita creada correctamente.'); this.refreshAppointments(); this.openBookingModal.set(false); },
+      next: () => {
+        this.bookingMessage.set(chosen.general
+          ? 'Cita confirmada.'
+          : 'Solicitud enviada: queda en revisión administrativa.');
+        this.refreshAppointments();
+        this.openBookingModal.set(false);
+      },
       error: err => this.bookingMessage.set(err.status === 409 ? 'El horario acaba de ser ocupado.' : 'No fue posible crear la cita.')
     });
   }
 
   searchAvailability() {
-    const date = this.bookDate();
+    const chosen = this.selectedSpecialty();
+    if (!chosen) { this.bookingMessage.set('Elige una especialidad.'); return; }
     this.bookingMessage.set('Consultando horarios…');
-    this.catalogApi.availability({ date, specialtyId: this.specialtyId() }).subscribe({
+    // La sede elegida se envía al backend. Antes el selector no llegaba a la consulta, de modo que
+    // la pantalla ofrecía una elección que no tenía ningún efecto.
+    const locationId = this.locations().find(site => site.code === this.bookFacility())?.id;
+    this.catalogApi.availability({ date: this.bookDate(), specialtyId: chosen.id, locationId }).subscribe({
       next: result => { this.availability.set(result.items); this.selectedSlot.set(result.items[0] ?? null); this.bookingMessage.set(result.items.length ? 'Selecciona un horario.' : 'No hay horarios disponibles para esa fecha.'); },
       error: () => { this.availability.set([]); this.bookingMessage.set('No fue posible consultar disponibilidad.'); }
     });
   }
-
-  specialtyId() { const ids: Record<string, number> = { 'Medicina General': 1, 'Nefrología': 6, 'Urología': 7, 'Gastroenterología': 8, 'Neumología Adulto': 9, 'Ortopedia y Traumatología': 11, 'Endocrinología': 10, 'Neurología': 12 }; return ids[this.bookSpecialty()] ?? 1; }
 
   selectSlot(id: string) { this.selectedSlot.set(this.availability().find(slot => String(slot.slotId) === id) ?? null); }
 
@@ -1241,6 +1271,25 @@ export class PatientPortal implements OnInit {
   ngOnInit() {
     this.refreshAppointments();
     this.loadProfileAndAffiliation();
+    this.loadBookingCatalogs();
+  }
+
+  /** HU-019: las opciones del formulario de reserva salen del backend, no del componente. */
+  loadBookingCatalogs() {
+    this.catalogApi.specialties().subscribe({
+      next: options => {
+        this.specialties.set(options);
+        // Se preselecciona una general: es la que se confirma de inmediato y el caso más común.
+        if (this.bookSpecialtyId() === null) {
+          this.bookSpecialtyId.set((options.find(o => o.general) ?? options[0])?.id ?? null);
+        }
+      },
+      error: () => this.bookingMessage.set('No fue posible cargar las especialidades.'),
+    });
+    this.catalogApi.locations().subscribe({
+      next: sites => this.locations.set(sites),
+      error: () => this.locations.set([]),
+    });
   }
 
   // --- HU-007 y HU-008 ---------------------------------------------------------------------
