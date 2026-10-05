@@ -6,7 +6,12 @@
 #   1. el contenido preparado contiene credenciales o patrones de secreto;
 #   2. no compila el chequeo de tipos;
 #   3. el lint falla;
-#   4. las pruebas no pasan.
+#   4. las pruebas no pasan;
+#   5. el build de produccion falla.
+#
+# El build es el paso 5 y no sobra: angular.json no lo lee ninguno de los otros cuatro, de modo
+# que un presupuesto o una opcion invalida alli pasaba el typecheck, el lint y las pruebas y
+# rompia el build. Ocurrio de verdad en S4.
 #
 # Se ejecuta dentro del contenedor fcv-citas-web-dev cuando esta disponible, porque alli viven
 # las dependencias instaladas. Si no hay forma de ejecutar las verificaciones, el hook bloquea
@@ -21,7 +26,7 @@ CONTAINER="fcv-citas-web-dev"
 
 echo "== Verificacion previa al commit (citas-web) =="
 
-echo "-- 1/4 Buscando credenciales en el contenido preparado"
+echo "-- 1/5 Buscando credenciales en el contenido preparado"
 if ! bash .githooks/secret-scan.sh --staged; then
   echo ""
   echo "COMMIT BLOQUEADO: se detectaron posibles secretos."
@@ -43,7 +48,7 @@ else
   exit 1
 fi
 
-echo "-- 2/4 Chequeo de tipos"
+echo "-- 2/5 Chequeo de tipos"
 if ! run npm run --silent typecheck; then
   echo ""
   echo "COMMIT BLOQUEADO: el chequeo de tipos falla."
@@ -51,7 +56,7 @@ if ! run npm run --silent typecheck; then
 fi
 echo "   OK."
 
-echo "-- 3/4 Lint"
+echo "-- 3/5 Lint"
 if ! run npm run --silent lint; then
   echo ""
   echo "COMMIT BLOQUEADO: el lint falla."
@@ -59,10 +64,18 @@ if ! run npm run --silent lint; then
 fi
 echo "   OK."
 
-echo "-- 4/4 Pruebas"
+echo "-- 4/5 Pruebas"
 if ! run npx ng test --watch=false; then
   echo ""
   echo "COMMIT BLOQUEADO: hay pruebas en rojo."
+  exit 1
+fi
+echo "   OK."
+
+echo "-- 5/5 Build de produccion"
+if ! run npm run --silent build; then
+  echo ""
+  echo "COMMIT BLOQUEADO: el build falla."
   exit 1
 fi
 echo "   OK."

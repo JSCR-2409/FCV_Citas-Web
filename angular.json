@@ -41,7 +41,6 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "_comentario": "Subido de 500kB a 600kB en S4: los tres portales crecieron con perfil, afiliación, agenda del profesional, EPS y auditoría. El límite de error sigue en 1MB.",
                   "maximumWarning": "600kB",
                   "maximumError": "1MB"
                 },
